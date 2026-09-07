@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "collections": {
+    "tickets": {
+      "description": "IT Support desk tickets including comments, triage data, priority, status, and SLAs",
+      "fields": {
+        "id": "string",
+        "ticketNumber": "string",
+        "title": "string",
+        "description": "string",
+        "category": "string",
+        "priority": "string",
+        "status": "string",
+        "tier": "string",
+        "reporterName": "string",
+        "reporterEmail": "string",
+        "reporterDepartment": "string",
+        "assigneeName": "string",
+        "assigneeEmail": "string",
+        "assetId": "string",
+        "operatingSystem": "string",
+        "slaDueHours": "number",
+        "createdAt": "string",
+        "updatedAt": "string",
+        "resolutionNotes": "string",
+        "comments": "array",
+        "tags": "array",
+        "aiTriage": "object"
+      }
+    },
+    "assets": {
+      "description": "IT Electronic Device Inventory tracking staff possession across 13 required fields",
+      "fields": {
+        "id": "string",
+        "employeeName": "string",
+        "department": "string",
+        "laptopModel": "string",
+        "laptopPrice": "string",
+        "laptopSerialNumber": "string",
+        "laptopConditionComments": "string",
+        "issuedWithMouse": "string",
+        "issuedWithTripod": "string",
+        "issuedWithMic": "string",
+        "phoneModel": "string",
+        "phonePrice": "string",
+        "safaricomPhoneNumber": "string",
+        "airtelPhoneNumber": "string",
+        "phoneConditionComments": "string",
+        "dateAdded": "string"
+      }
+    },
+    "users": {
+      "description": "Enterprise staff and IT personnel user accounts",
+      "fields": {
+        "id": "string",
+        "name": "string",
+        "email": "string",
+        "role": "string",
+        "department": "string",
+        "status": "string",
+        "avatar": "string",
+        "assignedTicketsCount": "number",
+        "lastActive": "string"
+      }
+    }
+  }
+}
