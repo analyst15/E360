@@ -110,19 +110,19 @@ export const EmailDiagnosticsModal: React.FC<EmailDiagnosticsModalProps> = ({
         }),
       });
       const data = await res.json();
-      if (res.ok && data.success) {
+      if (res.ok && data.success && data.status === 'sent') {
         setTestResult({
           success: true,
-          message: `Sample Ticket Alert dispatched to ${data.recipients?.join(', ')}!`,
+          message: `Sample Ticket Alert dispatched to ${data.recipients?.join(', ')}${data.port ? ` (Port ${data.port})` : ''}!`,
           recipient: testRecipient,
-          sender: 'it@elimishawatoto.org',
+          sender: data.sender || 'it@elimishawatoto.org',
           messageId: data.messageId,
         });
       } else {
         setTestResult({
           success: false,
-          error: data.error || data.message || 'Failed to dispatch sample ticket notification',
-          hint: 'Check SMTP credentials or recipient validity',
+          error: data.error || data.warning || data.message || 'Failed to dispatch sample ticket notification',
+          hint: data.warning || 'Check SMTP credentials or network port availability in production environment.',
         });
       }
     } catch (err: any) {
@@ -258,7 +258,7 @@ export const EmailDiagnosticsModal: React.FC<EmailDiagnosticsModalProps> = ({
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pt-1">
                 <div className="flex items-center gap-2 text-xs text-slate-500">
                   <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>Verified Google Workspace SSL (smtp.gmail.com:465)</span>
+                  <span>Google Workspace ({serverStatus.provider || 'smtp.gmail.com:587/465'})</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <button

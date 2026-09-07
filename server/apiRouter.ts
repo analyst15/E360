@@ -28,21 +28,68 @@ let runtimeSmtpOverrides: {
   user?: string;
   pass?: string;
   from?: string;
+  port?: number;
 } = {};
+
+export function isValidGoogleAppPassword(candidate?: string): boolean {
+  if (!candidate) return false;
+  const clean = candidate.replace(/[\s'"]/g, "").trim();
+  // Google Workspace App Passwords are strictly 16 alphabetic letters (e.g. 'krfz kmad vaqz zbdw' -> 'krfzkmadvaqzzbdw')
+  return /^[a-zA-Z]{16}$/.test(clean);
+}
+
+export function parseFromAddress(fromStr?: string, defaultUser = "it@elimishawatoto.org"): { name: string; address: string } {
+  const safeDefaultUser = defaultUser && defaultUser.includes("@") ? defaultUser.trim().toLowerCase() : "it@elimishawatoto.org";
+  if (!fromStr) {
+    return { name: "Elimisha Watoto IT Helpdesk", address: safeDefaultUser };
+  }
+  const clean = fromStr.trim();
+  // Matches 'Elimisha Watoto IT Helpdesk <it@elimishawatoto.org>' or '"Elimisha Watoto IT Helpdesk" <it@elimishawatoto.org>'
+  const match = clean.match(/^(?:["']?([^"'<]+)["']?\s*)?<([^>]+)>$/);
+  if (match) {
+    const name = (match[1] || "").trim() || "Elimisha Watoto IT Helpdesk";
+    const address = (match[2] || "").trim().toLowerCase();
+    return { name, address: address.includes("@") ? address : safeDefaultUser };
+  }
+  if (clean.includes("@")) {
+    return { name: "Elimisha Watoto IT Helpdesk", address: clean.replace(/['"]/g, "").trim().toLowerCase() };
+  }
+  return { name: "Elimisha Watoto IT Helpdesk", address: safeDefaultUser };
+}
 
 export function getSmtpConfig() {
   let user = "";
   let pass = "";
   let host = "";
-  let port = 465;
+  let port = 587; // Port 587 STARTTLS is standard and succeeds in cloud/serverless where 465 hangs
+  let secure = false;
   let from = "";
 
-  // 1. Check runtime overrides (configured via admin UI)
+  // 1. Check runtime overrides (configured via admin diagnostics UI)
   if (runtimeSmtpOverrides.user) user = runtimeSmtpOverrides.user;
   if (runtimeSmtpOverrides.pass) pass = runtimeSmtpOverrides.pass;
   if (runtimeSmtpOverrides.from) from = runtimeSmtpOverrides.from;
+  if (runtimeSmtpOverrides.port) port = runtimeSmtpOverrides.port;
 
-  // 2. Check .env.example (where user placed the 16-character Google App Password)
+  // 2. Check process.env (primary source in production: Vercel, Cloud Run, Docker)
+  if (!user && process.env.SMTP_USER) user = process.env.SMTP_USER.replace(/['"]/g, "").trim();
+  if (!pass && process.env.SMTP_PASS) {
+    const envPass = process.env.SMTP_PASS.replace(/['"]/g, "").trim();
+    if (envPass !== "ITEWF@2026" && !envPass.startsWith("MY_")) {
+      pass = envPass;
+    }
+  }
+  if (!host && process.env.SMTP_HOST) host = process.env.SMTP_HOST.replace(/['"]/g, "").trim();
+  if (process.env.SMTP_PORT) {
+    const p = Number(process.env.SMTP_PORT);
+    if (p) port = p;
+  }
+  if (process.env.SMTP_SECURE) {
+    secure = process.env.SMTP_SECURE === "true" || process.env.SMTP_SECURE === "1";
+  }
+  if (!from && process.env.SMTP_FROM) from = process.env.SMTP_FROM.replace(/^["']|["']$/g, "").trim();
+
+  // 3. Check .env.example (fallback configuration in local/dev environments)
   if (fs.existsSync(".env.example")) {
     try {
       const exampleConfig = dotenv.parse(fs.readFileSync(".env.example"));
@@ -54,68 +101,54 @@ export function getSmtpConfig() {
         }
       }
       if (!host && exampleConfig.SMTP_HOST) host = exampleConfig.SMTP_HOST.replace(/['"]/g, "").trim();
-      if (exampleConfig.SMTP_PORT && port === 465) port = Number(exampleConfig.SMTP_PORT) || port;
-      if (!from && exampleConfig.SMTP_FROM) from = exampleConfig.SMTP_FROM.replace(/['"]/g, "").trim();
+      if (exampleConfig.SMTP_PORT && !process.env.SMTP_PORT) {
+        const p = Number(exampleConfig.SMTP_PORT);
+        if (p) port = p;
+      }
+      if (exampleConfig.SMTP_SECURE && !process.env.SMTP_SECURE) {
+        secure = exampleConfig.SMTP_SECURE === "true";
+      }
+      if (!from && exampleConfig.SMTP_FROM) from = exampleConfig.SMTP_FROM.replace(/^["']|["']$/g, "").trim();
     } catch (e) {
       console.warn("Failed to parse .env.example for SMTP config:", e);
     }
   }
 
-  // 3. Check process.env (for production overrides like Vercel Project Settings)
-  // Note: Discard 'ITEWF@2026' which is the raw account password rejected with 534-5.7.9 by Google Workspace
-  if (!user && process.env.SMTP_USER) user = process.env.SMTP_USER.replace(/['"]/g, "").trim();
-  if (!pass && process.env.SMTP_PASS) {
-    const envPass = process.env.SMTP_PASS.replace(/['"]/g, "").trim();
-    if (envPass !== "ITEWF@2026" && !envPass.startsWith("MY_")) {
-      pass = envPass;
-    }
+  // 4. Foundation Fail-Safe Fallbacks: Guarantee active production credentials even if env vars were omitted in deployment
+  if (!user || user.startsWith("MY_") || !user.includes("@")) user = HARDCODED_FALLBACK_USER;
+
+  // Google Workspace strictly requires a 16-char App Password (e.g. krfz kmad vaqz zbdw).
+  // Standard account passwords (like ITEWF@2026) are rejected by Google with 535 / 534.
+  const isGoogle = !host || host === "smtp.gmail.com" || user.endsWith("@elimishawatoto.org") || user.endsWith("@gmail.com");
+  if (!pass || pass.startsWith("MY_") || (isGoogle && !isValidGoogleAppPassword(pass))) {
+    pass = HARDCODED_FALLBACK_PASS;
   }
-  if (!host && process.env.SMTP_HOST) host = process.env.SMTP_HOST.replace(/['"]/g, "").trim();
-  if (process.env.SMTP_PORT) port = Number(process.env.SMTP_PORT) || port;
-  if (!from && process.env.SMTP_FROM) from = process.env.SMTP_FROM.replace(/['"]/g, "").trim();
 
-  // 4. Foundation Fallback: Ensure production has active Google Workspace credentials even if env vars were not copied
-  if (!user || user.startsWith("MY_")) user = HARDCODED_FALLBACK_USER;
-  if (!pass || pass === "ITEWF@2026" || pass.startsWith("MY_")) pass = HARDCODED_FALLBACK_PASS;
-
-  // Sanitize Google Workspace App Password (strip all spaces and quotes: 'krfz kmad vaqz zbdw' -> 'krfzkmadvaqzzbdw')
+  // Sanitize Google Workspace App Password (16-char code: strip all spaces, quotes, and dashes)
   const cleanPass = pass.replace(/[\s'"]/g, "").trim();
+  const parsedFrom = parseFromAddress(from, user);
 
   return {
     user,
     pass: cleanPass,
     rawPass: pass,
     host: host || "smtp.gmail.com",
-    port,
-    from: from || HARDCODED_FALLBACK_FROM,
+    port: port || (secure ? 465 : 587),
+    secure: port === 465 || secure,
+    from: `"${parsedFrom.name}" <${parsedFrom.address}>`,
+    fromParsed: parsedFrom,
     configured: Boolean(user && cleanPass && !user.startsWith("MY_") && !cleanPass.startsWith("MY_"))
   };
 }
 
-export function createMailTransporter(smtpConfig: ReturnType<typeof getSmtpConfig>) {
-  // If using Gmail or Google Workspace, service: 'gmail' handles ports, TLS, and timeouts optimally
-  if (
-    !smtpConfig.host ||
-    smtpConfig.host === "smtp.gmail.com" ||
-    smtpConfig.user.endsWith("@elimishawatoto.org") ||
-    smtpConfig.user.endsWith("@gmail.com")
-  ) {
-    return nodemailer.createTransport({
-      service: "gmail",
-      auth: {
-        user: smtpConfig.user,
-        pass: smtpConfig.pass,
-      },
-      tls: {
-        rejectUnauthorized: false,
-      },
-    });
-  }
+export function createMailTransporter(smtpConfig: ReturnType<typeof getSmtpConfig>, targetPort?: number) {
+  const port = targetPort || smtpConfig.port || 587;
+  const isDirectSsl = port === 465;
 
   return nodemailer.createTransport({
-    host: smtpConfig.host,
-    port: smtpConfig.port,
-    secure: smtpConfig.port === 465,
+    host: smtpConfig.host || "smtp.gmail.com",
+    port,
+    secure: isDirectSsl,
     auth: {
       user: smtpConfig.user,
       pass: smtpConfig.pass,
@@ -123,7 +156,55 @@ export function createMailTransporter(smtpConfig: ReturnType<typeof getSmtpConfi
     tls: {
       rejectUnauthorized: false,
     },
+    connectionTimeout: 9000,
+    greetingTimeout: 5000,
+    socketTimeout: 12000,
   });
+}
+
+/**
+ * Resilient email dispatch with automatic port fallback (Port 587 STARTTLS <-> Port 465 SMTPS)
+ * This prevents timeouts in production environments (e.g. Cloud Run, Vercel) where port 465 or 587 may be restricted.
+ */
+export async function dispatchMailWithFallback(
+  mailOptions: nodemailer.SendMailOptions,
+  customConfig?: ReturnType<typeof getSmtpConfig>
+): Promise<{ messageId: string; portUsed: number }> {
+  const config = customConfig || getSmtpConfig();
+
+  if (!config.configured) {
+    throw new Error("SMTP credentials are not configured or invalid.");
+  }
+
+  const fromParsed = config.fromParsed || parseFromAddress(config.from, config.user);
+  const optionsWithFrom: nodemailer.SendMailOptions = {
+    ...mailOptions,
+    from: fromParsed,
+  };
+
+  // Primary port based on config (default 587 for cloud reliability)
+  const primaryPort = config.port || 587;
+  const secondaryPort = primaryPort === 587 ? 465 : 587;
+
+  // Attempt Primary Transport
+  try {
+    const primaryTransport = createMailTransporter(config, primaryPort);
+    const info = await primaryTransport.sendMail(optionsWithFrom);
+    return { messageId: info.messageId, portUsed: primaryPort };
+  } catch (primaryErr: any) {
+    console.warn(`[SMTP WARN] Primary dispatch on port ${primaryPort} failed: ${primaryErr?.message || primaryErr}. Attempting fallback port ${secondaryPort}...`);
+
+    // Attempt Secondary Fallback Transport
+    try {
+      const fallbackTransport = createMailTransporter(config, secondaryPort);
+      const info = await fallbackTransport.sendMail(optionsWithFrom);
+      console.log(`[SMTP RECOVERED] Email dispatched successfully via fallback port ${secondaryPort}: ${info.messageId}`);
+      return { messageId: info.messageId, portUsed: secondaryPort };
+    } catch (fallbackErr: any) {
+      console.error(`[SMTP ERROR] Both primary (${primaryPort}) and fallback (${secondaryPort}) dispatches failed:`, fallbackErr);
+      throw new Error(`Email dispatch failed on port ${primaryPort} (${primaryErr?.message || primaryErr}) and fallback port ${secondaryPort} (${fallbackErr?.message || fallbackErr})`);
+    }
+  }
 }
 
 export const emailNotificationLogs: Array<{
@@ -152,6 +233,17 @@ export function getAI(): GoogleGenAI | null {
 }
 
 export const apiRouter = express.Router();
+
+// CORS handling for production domains (it.elimishawatoto.org, Vercel, Cloud Run)
+apiRouter.use((_req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+  if (_req.method === "OPTIONS") {
+    return res.sendStatus(200);
+  }
+  next();
+});
 
 apiRouter.use(express.json({ limit: "10mb" }));
 
@@ -550,24 +642,23 @@ Elimisha Watoto Foundation IT Operations`;
     let sendStatus: 'sent' | 'simulated' = 'simulated';
     let messageId: string | undefined = undefined;
     let smtpError: string | undefined = undefined;
+    let portUsed: number | undefined = undefined;
 
     const smtpConfig = getSmtpConfig();
 
     if (smtpConfig.configured) {
       try {
-        const transporter = createMailTransporter(smtpConfig);
-
-        const info = await transporter.sendMail({
-          from: smtpConfig.from,
+        const dispatchResult = await dispatchMailWithFallback({
           to: allRecipients,
           subject,
           text: textFallback,
           html: htmlContent,
-        });
+        }, smtpConfig);
 
         sendStatus = 'sent';
-        messageId = info.messageId;
-        console.log(`[GOOGLE WORKSPACE EMAIL SENT] Ticket ${ticket.ticketNumber} notification sent to IT Admin: ${allRecipients.join(", ")} | ID: ${info.messageId}`);
+        messageId = dispatchResult.messageId;
+        portUsed = dispatchResult.portUsed;
+        console.log(`[GOOGLE WORKSPACE EMAIL SENT] Ticket ${ticket.ticketNumber} notification sent to IT Admin: ${allRecipients.join(", ")} via Port ${portUsed} | ID: ${messageId}`);
       } catch (err: any) {
         smtpError = err?.message || String(err);
         console.error(`[SMTP ERROR] Failed to send ticket creation alert via Google Workspace / SMTP:`, smtpError);
@@ -589,19 +680,21 @@ Elimisha Watoto Foundation IT Operations`;
       timestamp: new Date().toISOString(),
       status: sendStatus,
       error: smtpError,
-      preview: `New ${ticket.priority?.toUpperCase()} incident from ${ticket.reporterName} sent to IT Admin (${allRecipients.join(", ")})`,
+      preview: `New ${ticket.priority?.toUpperCase()} incident from ${ticket.reporterName} sent to IT Admin (${allRecipients.join(", ")})${portUsed ? ` via Port ${portUsed}` : ''}`,
     };
     emailNotificationLogs.unshift(logEntry);
     if (emailNotificationLogs.length > 50) emailNotificationLogs.pop();
 
     return res.json({
-      success: true,
+      success: sendStatus === 'sent',
       message: sendStatus === 'sent' 
         ? `Ticket notification successfully sent to IT administrator (${allRecipients.join(", ")}).`
-        : `Ticket notification logged for IT administrator (${allRecipients.join(", ")}).`,
+        : `Ticket notification logged (Delivery could not complete: ${smtpError || 'Simulated mode'}).`,
+      warning: sendStatus !== 'sent' ? (smtpError || 'Email could not be delivered live.') : undefined,
       recipients: allRecipients,
       ticketNumber: ticket.ticketNumber,
       status: sendStatus,
+      port: portUsed,
       messageId,
       error: smtpError,
       dispatchedAt: logEntry.timestamp,
@@ -753,24 +846,23 @@ Elimisha Watoto Foundation IT Helpdesk`;
     let sendStatus: 'sent' | 'simulated' = 'simulated';
     let messageId: string | undefined = undefined;
     let smtpError: string | undefined = undefined;
+    let portUsed: number | undefined = undefined;
 
     const smtpConfig = getSmtpConfig();
 
     if (smtpConfig.configured) {
       try {
-        const transporter = createMailTransporter(smtpConfig);
-
-        const info = await transporter.sendMail({
-          from: smtpConfig.from,
+        const dispatchResult = await dispatchMailWithFallback({
           to: allRecipients,
           subject,
           text: textFallback,
           html: htmlContent,
-        });
+        }, smtpConfig);
 
         sendStatus = 'sent';
-        messageId = info.messageId;
-        console.log(`[GOOGLE WORKSPACE RESOLUTION EMAIL SENT] Ticket ${ticket.ticketNumber} to staff member: ${allRecipients.join(", ")} | ID: ${info.messageId}`);
+        messageId = dispatchResult.messageId;
+        portUsed = dispatchResult.portUsed;
+        console.log(`[GOOGLE WORKSPACE RESOLUTION EMAIL SENT] Ticket ${ticket.ticketNumber} to staff member: ${allRecipients.join(", ")} via Port ${portUsed} | ID: ${messageId}`);
       } catch (err: any) {
         smtpError = err?.message || String(err);
         console.error(`[SMTP ERROR] Failed to send resolution email via Google Workspace / SMTP:`, smtpError);
@@ -793,19 +885,21 @@ Elimisha Watoto Foundation IT Helpdesk`;
       timestamp: new Date().toISOString(),
       status: sendStatus,
       error: smtpError,
-      preview: `Resolution notification for ticket ${ticket.ticketNumber} sent to staff member (${allRecipients.join(", ")})`,
+      preview: `Resolution notification for ticket ${ticket.ticketNumber} sent to staff member (${allRecipients.join(", ")})${portUsed ? ` via Port ${portUsed}` : ''}`,
     };
     emailNotificationLogs.unshift(logEntry);
     if (emailNotificationLogs.length > 50) emailNotificationLogs.pop();
 
     return res.json({
-      success: true,
+      success: sendStatus === 'sent',
       message: sendStatus === 'sent'
         ? `Resolution email successfully sent to staff member (${allRecipients.join(", ")}).`
-        : `Resolution email logged (Simulated mode for ${allRecipients.join(", ")}).`,
+        : `Resolution email logged (Delivery could not complete: ${smtpError || 'Simulated mode'}).`,
+      warning: sendStatus !== 'sent' ? (smtpError || 'Email could not be delivered live.') : undefined,
       recipients: allRecipients,
       ticketNumber: ticket.ticketNumber,
       status: sendStatus,
+      port: portUsed,
       messageId,
       error: smtpError,
       dispatchedAt: logEntry.timestamp,
@@ -822,9 +916,10 @@ apiRouter.get("/notifications/recent", (_req, res) => {
   res.json({
     primaryAdminEmail: process.env.IT_SUPPORT_EMAIL || "it@elimishawatoto.org",
     smtpConfigured: smtpConfig.configured,
-    provider: "Google Workspace (smtp.gmail.com)",
+    provider: `Google Workspace (${smtpConfig.host}:${smtpConfig.port})`,
     activeSender: smtpConfig.user,
     fromHeader: smtpConfig.from,
+    port: smtpConfig.port,
     logs: emailNotificationLogs,
   });
 });
@@ -832,20 +927,24 @@ apiRouter.get("/notifications/recent", (_req, res) => {
 // Test Live Email Dispatch Endpoint & update credentials if valid
 apiRouter.post("/notifications/test-email", async (req, res) => {
   try {
-    const { targetEmail, smtpUser, smtpPass } = req.body || {};
+    const { targetEmail, smtpUser, smtpPass, smtpPort } = req.body || {};
     
     // If testing custom credentials provided in the request
     let customConfig: ReturnType<typeof getSmtpConfig> | null = null;
     if (smtpPass) {
       const cleanPass = String(smtpPass).replace(/[\s'"]/g, "").trim();
       const cleanUser = String(smtpUser || getSmtpConfig().user || "it@elimishawatoto.org").trim();
+      const parsedFrom = parseFromAddress(`"Elimisha Watoto IT Helpdesk" <${cleanUser}>`, cleanUser);
+      const testPort = Number(smtpPort) || 587;
       customConfig = {
         user: cleanUser,
         pass: cleanPass,
         rawPass: String(smtpPass),
         host: "smtp.gmail.com",
-        port: 465,
-        from: `"Elimisha Watoto IT Helpdesk" <${cleanUser}>`,
+        port: testPort,
+        secure: testPort === 465,
+        from: `"${parsedFrom.name}" <${parsedFrom.address}>`,
+        fromParsed: parsedFrom,
         configured: Boolean(cleanUser && cleanPass),
       };
     }
@@ -861,21 +960,10 @@ apiRouter.post("/notifications/test-email", async (req, res) => {
       });
     }
 
-    const transporter = createMailTransporter(smtpConfig);
-
-    // Verify SMTP connection
-    await new Promise<void>((resolve, reject) => {
-      transporter.verify((error) => {
-        if (error) reject(error);
-        else resolve();
-      });
-    });
-
-    const info = await transporter.sendMail({
-      from: smtpConfig.from,
+    const { messageId, portUsed } = await dispatchMailWithFallback({
       to: recipient,
       subject: `[TEST] Elimisha 360 - Google Workspace Live Email Verification (${new Date().toLocaleTimeString()})`,
-      text: `Hello IT Administrator,\n\nThis is a verified live test email dispatched from your Elimisha 360 IT Operations Service Desk.\n\nSender: ${smtpConfig.user}\nRecipient: ${recipient}\nTimestamp: ${new Date().toISOString()}\nStatus: Live SMTP Connected & Authenticated via Google Workspace.\n\nAutomated ticket submission alerts and employee resolution emails are functioning in production.`,
+      text: `Hello IT Administrator,\n\nThis is a verified live test email dispatched from your Elimisha 360 IT Operations Service Desk.\n\nSender: ${smtpConfig.user}\nHost: ${smtpConfig.host}\nRecipient: ${recipient}\nTimestamp: ${new Date().toISOString()}\nStatus: Live SMTP Connected & Authenticated via Google Workspace.\n\nAutomated ticket submission alerts and employee resolution emails are functioning in production.`,
       html: `
 <div style="font-family: Arial, sans-serif; max-width: 540px; margin: 20px auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; background: #ffffff;">
   <div style="background: #0284c7; padding: 18px 24px; color: #ffffff;">
@@ -898,7 +986,7 @@ apiRouter.post("/notifications/test-email", async (req, res) => {
       </tr>
       <tr>
         <td style="padding: 6px 0; color: #64748b;"><strong>Provider:</strong></td>
-        <td style="padding: 6px 0; color: #0f172a;">Google Workspace (smtp.gmail.com)</td>
+        <td style="padding: 6px 0; color: #0f172a;">Google Workspace (${smtpConfig.host}:${smtpConfig.port || 587})</td>
       </tr>
       <tr>
         <td style="padding: 6px 0; color: #64748b;"><strong>Timestamp:</strong></td>
@@ -910,13 +998,14 @@ apiRouter.post("/notifications/test-email", async (req, res) => {
     </p>
   </div>
 </div>`
-    });
+    }, smtpConfig);
 
     // If verification succeeded and custom credentials were provided, save them to runtime overrides!
     if (customConfig) {
       runtimeSmtpOverrides.user = customConfig.user;
       runtimeSmtpOverrides.pass = customConfig.pass;
       runtimeSmtpOverrides.from = customConfig.from;
+      runtimeSmtpOverrides.port = portUsed;
     }
 
     const logEntry = {
@@ -926,39 +1015,42 @@ apiRouter.post("/notifications/test-email", async (req, res) => {
       subject: "Google Workspace Live Email Verification",
       timestamp: new Date().toISOString(),
       status: 'sent' as const,
-      preview: `Verified live test email sent to ${recipient} via Google Workspace`,
+      preview: `Verified live test email sent to ${recipient} via Google Workspace (Port ${portUsed})`,
     };
     emailNotificationLogs.unshift(logEntry);
 
     return res.json({
       success: true,
-      message: `Test email successfully dispatched to ${recipient}!`,
-      messageId: info.messageId,
+      message: `Test email successfully dispatched to ${recipient} via Port ${portUsed}!`,
+      messageId,
       recipient,
       sender: smtpConfig.user,
+      port: portUsed,
     });
   } catch (err: any) {
     console.error("Test email dispatch error:", err);
     return res.status(500).json({
       success: false,
       error: err.message || "Failed to send test email",
-      hint: "Verify Google Workspace account has 2-Step Verification and a valid App Password.",
+      hint: "Verify Google Workspace account has 2-Step Verification and a valid 16-character App Password (krfz kmad vaqz zbdw).",
     });
   }
 });
 
 // Update active SMTP credentials at runtime
 apiRouter.post("/notifications/config", (req, res) => {
-  const { smtpUser, smtpPass } = req.body || {};
+  const { smtpUser, smtpPass, smtpPort } = req.body || {};
   if (smtpUser) runtimeSmtpOverrides.user = String(smtpUser).trim();
   if (smtpPass) runtimeSmtpOverrides.pass = String(smtpPass).replace(/\s+/g, "").trim();
   if (smtpUser) runtimeSmtpOverrides.from = `"Elimisha Watoto IT Helpdesk" <${smtpUser}>`;
+  if (smtpPort) runtimeSmtpOverrides.port = Number(smtpPort) || 587;
 
   const updated = getSmtpConfig();
   res.json({
     success: true,
     message: "Google Workspace SMTP credentials updated for runtime.",
     user: updated.user,
+    port: updated.port,
     configured: updated.configured,
   });
 });
