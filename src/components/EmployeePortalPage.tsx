@@ -1944,9 +1944,31 @@ export const EmployeePortalPage: React.FC<EmployeePortalPageProps> = ({
                 />
               </div>
 
-              {/* Submitting info banner */}
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs text-slate-500">
-                Submitting as <strong className="text-slate-800 font-semibold">{selectedEmployeeName}</strong> ({selectedEmployeeEmail})
+              {/* Submitting user & Notification Email Input */}
+              <div className="p-3.5 bg-blue-50/50 rounded-xl border border-blue-100/80 space-y-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs">
+                  <span className="text-slate-600">Submitting Staff Member:</span>
+                  <strong className="text-slate-900 font-semibold">{selectedEmployeeName} ({selectedEmployeeDept})</strong>
+                </div>
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1 text-[11px]">
+                    Notification Email Address (for Ticket Updates & Resolution Alerts) *
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={selectedEmployeeEmail}
+                    onChange={(e) => {
+                      setSelectedEmployeeEmail(e.target.value);
+                      localStorage.setItem('ewf_employee_email', e.target.value);
+                    }}
+                    placeholder="e.g. your.email@domain.com or it@elimishawatoto.org"
+                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 placeholder-slate-400 focus:outline-hidden focus:border-blue-500 focus:ring-1 focus:ring-blue-200"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    An automated confirmation receipt and resolution notification will be emailed to this address.
+                  </p>
+                </div>
               </div>
 
               {/* Modal Actions */}

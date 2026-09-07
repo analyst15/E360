@@ -11,8 +11,8 @@ export interface NotificationResult {
 }
 
 /**
- * Dispatches an automated email notification when a new ticket is submitted
- * Recipients: IT Admin (it@elimishawatoto.org) + IT Staff members
+ * Dispatches an automated email notification when a new ticket is submitted.
+ * Recipient: IT Administrator ONLY (it@elimishawatoto.org)
  */
 export async function sendTicketCreatedNotification(
   ticket: Ticket,
@@ -81,7 +81,7 @@ export async function sendTicketResolvedNotification(
 }
 
 /**
- * Fetch recent notification dispatch logs
+ * Fetch recent notification dispatch logs and Google Workspace SMTP status
  */
 export async function getRecentNotificationLogs() {
   try {
@@ -93,3 +93,58 @@ export async function getRecentNotificationLogs() {
     return null;
   }
 }
+
+export interface TestEmailResponse {
+  success: boolean;
+  message?: string;
+  error?: string;
+  hint?: string;
+  messageId?: string;
+  recipient?: string;
+  sender?: string;
+}
+
+/**
+ * Sends a live verification test email through Google Workspace SMTP
+ */
+export async function testSmtpConnection(
+  targetEmail?: string,
+  customCredentials?: { smtpUser?: string; smtpPass?: string }
+): Promise<TestEmailResponse> {
+  try {
+    const res = await fetch('/api/notifications/test-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        targetEmail,
+        ...(customCredentials || {}),
+      }),
+    });
+
+    const data = await res.json();
+    return data;
+  } catch (err: any) {
+    console.error('Failed to test SMTP connection:', err);
+    return {
+      success: false,
+      error: err.message || 'Network error while attempting to test SMTP delivery',
+    };
+  }
+}
+
+/**
+ * Updates runtime Google Workspace credentials
+ */
+export async function updateSmtpConfig(config: { smtpUser: string; smtpPass: string }) {
+  try {
+    const res = await fetch('/api/notifications/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+

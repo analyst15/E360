@@ -20,6 +20,16 @@ try {
   console.warn("Could not load fallback .env.example:", e);
 }
 
+const HARDCODED_FALLBACK_USER = "it@elimishawatoto.org";
+const HARDCODED_FALLBACK_PASS = "krfzkmadvaqzzbdw"; // Elimisha Watoto Foundation Google Workspace App Password
+const HARDCODED_FALLBACK_FROM = '"Elimisha Watoto IT Helpdesk" <it@elimishawatoto.org>';
+
+let runtimeSmtpOverrides: {
+  user?: string;
+  pass?: string;
+  from?: string;
+} = {};
+
 export function getSmtpConfig() {
   let user = "";
   let pass = "";
@@ -27,29 +37,49 @@ export function getSmtpConfig() {
   let port = 465;
   let from = "";
 
-  // Check .env.example first for latest configured credentials
+  // 1. Check runtime overrides (configured via admin UI)
+  if (runtimeSmtpOverrides.user) user = runtimeSmtpOverrides.user;
+  if (runtimeSmtpOverrides.pass) pass = runtimeSmtpOverrides.pass;
+  if (runtimeSmtpOverrides.from) from = runtimeSmtpOverrides.from;
+
+  // 2. Check .env.example (where user placed the 16-character Google App Password)
   if (fs.existsSync(".env.example")) {
     try {
       const exampleConfig = dotenv.parse(fs.readFileSync(".env.example"));
-      if (exampleConfig.SMTP_USER) user = exampleConfig.SMTP_USER.replace(/['"]/g, "").trim();
-      if (exampleConfig.SMTP_PASS) pass = exampleConfig.SMTP_PASS.replace(/['"]/g, "").trim();
-      if (exampleConfig.SMTP_HOST) host = exampleConfig.SMTP_HOST.replace(/['"]/g, "").trim();
-      if (exampleConfig.SMTP_PORT) port = Number(exampleConfig.SMTP_PORT) || port;
-      if (exampleConfig.SMTP_FROM) from = exampleConfig.SMTP_FROM.replace(/['"]/g, "").trim();
+      if (!user && exampleConfig.SMTP_USER) user = exampleConfig.SMTP_USER.replace(/['"]/g, "").trim();
+      if (!pass && exampleConfig.SMTP_PASS) {
+        const candidate = exampleConfig.SMTP_PASS.replace(/['"]/g, "").trim();
+        if (!candidate.startsWith("MY_") && candidate !== "ITEWF@2026") {
+          pass = candidate;
+        }
+      }
+      if (!host && exampleConfig.SMTP_HOST) host = exampleConfig.SMTP_HOST.replace(/['"]/g, "").trim();
+      if (exampleConfig.SMTP_PORT && port === 465) port = Number(exampleConfig.SMTP_PORT) || port;
+      if (!from && exampleConfig.SMTP_FROM) from = exampleConfig.SMTP_FROM.replace(/['"]/g, "").trim();
     } catch (e) {
       console.warn("Failed to parse .env.example for SMTP config:", e);
     }
   }
 
-  // Fallback to process.env if present and non-empty
-  if (process.env.SMTP_USER && !user) user = process.env.SMTP_USER.replace(/['"]/g, "").trim();
-  if (process.env.SMTP_PASS && !pass) pass = process.env.SMTP_PASS.replace(/['"]/g, "").trim();
-  if (process.env.SMTP_HOST && !host) host = process.env.SMTP_HOST.replace(/['"]/g, "").trim();
+  // 3. Check process.env (for production overrides like Vercel Project Settings)
+  // Note: Discard 'ITEWF@2026' which is the raw account password rejected with 534-5.7.9 by Google Workspace
+  if (!user && process.env.SMTP_USER) user = process.env.SMTP_USER.replace(/['"]/g, "").trim();
+  if (!pass && process.env.SMTP_PASS) {
+    const envPass = process.env.SMTP_PASS.replace(/['"]/g, "").trim();
+    if (envPass !== "ITEWF@2026" && !envPass.startsWith("MY_")) {
+      pass = envPass;
+    }
+  }
+  if (!host && process.env.SMTP_HOST) host = process.env.SMTP_HOST.replace(/['"]/g, "").trim();
   if (process.env.SMTP_PORT) port = Number(process.env.SMTP_PORT) || port;
-  if (process.env.SMTP_FROM && !from) from = process.env.SMTP_FROM.replace(/['"]/g, "").trim();
+  if (!from && process.env.SMTP_FROM) from = process.env.SMTP_FROM.replace(/['"]/g, "").trim();
 
-  // Sanitize Google Workspace App Password (strip internal spaces: 'kues djdb dxvm yiuf' -> 'kuesdjdbdxvmyiuf')
-  const cleanPass = pass.replace(/\s+/g, "");
+  // 4. Foundation Fallback: Ensure production has active Google Workspace credentials even if env vars were not copied
+  if (!user || user.startsWith("MY_")) user = HARDCODED_FALLBACK_USER;
+  if (!pass || pass === "ITEWF@2026" || pass.startsWith("MY_")) pass = HARDCODED_FALLBACK_PASS;
+
+  // Sanitize Google Workspace App Password (strip all spaces and quotes: 'krfz kmad vaqz zbdw' -> 'krfzkmadvaqzzbdw')
+  const cleanPass = pass.replace(/[\s'"]/g, "").trim();
 
   return {
     user,
@@ -57,9 +87,43 @@ export function getSmtpConfig() {
     rawPass: pass,
     host: host || "smtp.gmail.com",
     port,
-    from: from || `"Elimisha Watoto IT Helpdesk" <${user || "it@elimishawatoto.org"}>`,
+    from: from || HARDCODED_FALLBACK_FROM,
     configured: Boolean(user && cleanPass && !user.startsWith("MY_") && !cleanPass.startsWith("MY_"))
   };
+}
+
+export function createMailTransporter(smtpConfig: ReturnType<typeof getSmtpConfig>) {
+  // If using Gmail or Google Workspace, service: 'gmail' handles ports, TLS, and timeouts optimally
+  if (
+    !smtpConfig.host ||
+    smtpConfig.host === "smtp.gmail.com" ||
+    smtpConfig.user.endsWith("@elimishawatoto.org") ||
+    smtpConfig.user.endsWith("@gmail.com")
+  ) {
+    return nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: smtpConfig.user,
+        pass: smtpConfig.pass,
+      },
+      tls: {
+        rejectUnauthorized: false,
+      },
+    });
+  }
+
+  return nodemailer.createTransport({
+    host: smtpConfig.host,
+    port: smtpConfig.port,
+    secure: smtpConfig.port === 465,
+    auth: {
+      user: smtpConfig.user,
+      pass: smtpConfig.pass,
+    },
+    tls: {
+      rejectUnauthorized: false,
+    },
+  });
 }
 
 export const emailNotificationLogs: Array<{
@@ -357,28 +421,28 @@ Output JSON:
   }
 });
 
-// Ticket Email Notification Endpoint
+// Ticket Email Notification Endpoint (Tickets Raised -> Sent ONLY to IT Administrator)
 apiRouter.post("/notifications/ticket-created", async (req, res) => {
   try {
-    const { ticket, staffEmails = [] } = req.body;
+    const { ticket, staffEmails = [], testRecipient } = req.body;
 
     if (!ticket || !ticket.ticketNumber || !ticket.title) {
       return res.status(400).json({ error: "Invalid ticket payload" });
     }
 
-    const primaryAdminEmail = process.env.IT_SUPPORT_EMAIL || "it@elimishawatoto.org";
+    const primaryAdminEmail = (process.env.IT_SUPPORT_EMAIL || "it@elimishawatoto.org").trim().toLowerCase();
     
-    // Combine admin email and IT staff emails, removing duplicates
-    const allRecipients = Array.from(
-      new Set(
-        [primaryAdminEmail, ...(Array.isArray(staffEmails) ? staffEmails : [])]
-          .map((email: string) => email?.trim().toLowerCase())
-          .filter((email: string) => Boolean(email) && email.includes("@"))
-      )
-    );
+    // STRICT RULE: Only the IT Administrator (it@elimishawatoto.org) receives tickets raised.
+    // The staff member/employee who submitted the ticket does NOT receive this IT alert.
+    let allRecipients: string[];
+    if (testRecipient && typeof testRecipient === 'string' && testRecipient.includes('@')) {
+      allRecipients = [testRecipient.trim().toLowerCase()];
+    } else {
+      allRecipients = [primaryAdminEmail];
+    }
 
-    const subject = `[IT Service Desk - ${ticket.priority?.toUpperCase() || "NEW"}] Ticket ${ticket.ticketNumber}: ${ticket.title}`;
-    const appUrl = process.env.APP_URL || "https://ais-pre-b75v64w3m4o26ytkwlo4dg-396190362785.europe-west2.run.app";
+    const subject = `[New IT Support Ticket - ${ticket.priority?.toUpperCase() || "NEW"}] Ticket ${ticket.ticketNumber}: ${ticket.title}`;
+    const itWorkspaceUrl = (process.env.IT_WORKSPACE_URL || "https://it.elimishawatoto.org").trim();
 
     const htmlContent = `
 <!DOCTYPE html>
@@ -460,11 +524,11 @@ apiRouter.post("/notifications/ticket-created", async (req, res) => {
       </div>
 
       <div style="text-align: center; margin-top: 20px;">
-        <a href="${appUrl}" class="btn" style="color: #ffffff;">Open IT Support Workspace</a>
+        <a href="${itWorkspaceUrl}" class="btn" style="color: #ffffff;">Open IT Support Workspace</a>
       </div>
     </div>
     <div class="footer">
-      Sent to IT Administration (<strong>it@elimishawatoto.org</strong>) and assigned IT Support Staff.<br/>
+      Sent exclusively to IT Administration (<strong>${primaryAdminEmail}</strong>).<br/>
       Elimisha Watoto Foundation • Automated IT Service Desk Notification
     </div>
   </div>
@@ -474,13 +538,13 @@ apiRouter.post("/notifications/ticket-created", async (req, res) => {
     const textFallback = `[NEW IT TICKET: ${ticket.ticketNumber}]
 Priority: ${ticket.priority}
 Category: ${ticket.category}
-Reporter: ${ticket.reporterName} (${ticket.reporterDepartment || 'Staff'}) - ${ticket.reporterEmail || 'N/A'}
+Staff Member: ${ticket.reporterName} (${ticket.reporterDepartment || 'Staff'}) - ${ticket.reporterEmail || 'N/A'}
 Summary: ${ticket.title}
 
 Description:
 ${ticket.description}
 
-Open Workspace: ${appUrl}
+Open IT Support Workspace: ${itWorkspaceUrl}
 Elimisha Watoto Foundation IT Operations`;
 
     let sendStatus: 'sent' | 'simulated' = 'simulated';
@@ -491,18 +555,7 @@ Elimisha Watoto Foundation IT Operations`;
 
     if (smtpConfig.configured) {
       try {
-        const transporter = nodemailer.createTransport({
-          host: smtpConfig.host,
-          port: smtpConfig.port,
-          secure: smtpConfig.port === 465,
-          auth: {
-            user: smtpConfig.user,
-            pass: smtpConfig.pass,
-          },
-          tls: {
-            rejectUnauthorized: false,
-          },
-        });
+        const transporter = createMailTransporter(smtpConfig);
 
         const info = await transporter.sendMail({
           from: smtpConfig.from,
@@ -514,14 +567,14 @@ Elimisha Watoto Foundation IT Operations`;
 
         sendStatus = 'sent';
         messageId = info.messageId;
-        console.log(`[GOOGLE WORKSPACE EMAIL SENT] Ticket ${ticket.ticketNumber} notification to: ${allRecipients.join(", ")} | ID: ${info.messageId}`);
+        console.log(`[GOOGLE WORKSPACE EMAIL SENT] Ticket ${ticket.ticketNumber} notification sent to IT Admin: ${allRecipients.join(", ")} | ID: ${info.messageId}`);
       } catch (err: any) {
         smtpError = err?.message || String(err);
         console.error(`[SMTP ERROR] Failed to send ticket creation alert via Google Workspace / SMTP:`, smtpError);
         sendStatus = 'simulated';
       }
     } else {
-      console.log(`[EMAIL NOTIFICATION DISPATCHED] (Simulated / Logged for IT Admin & Staff)`);
+      console.log(`[EMAIL NOTIFICATION DISPATCHED] (Simulated / Logged for IT Admin)`);
       console.log(`To: ${allRecipients.join(", ")}`);
       console.log(`Subject: ${subject}`);
       console.log(`Ticket: ${ticket.ticketNumber} - ${ticket.title}`);
@@ -536,7 +589,7 @@ Elimisha Watoto Foundation IT Operations`;
       timestamp: new Date().toISOString(),
       status: sendStatus,
       error: smtpError,
-      preview: `${ticket.priority?.toUpperCase()} incident from ${ticket.reporterName}: ${ticket.title}`,
+      preview: `New ${ticket.priority?.toUpperCase()} incident from ${ticket.reporterName} sent to IT Admin (${allRecipients.join(", ")})`,
     };
     emailNotificationLogs.unshift(logEntry);
     if (emailNotificationLogs.length > 50) emailNotificationLogs.pop();
@@ -544,8 +597,8 @@ Elimisha Watoto Foundation IT Operations`;
     return res.json({
       success: true,
       message: sendStatus === 'sent' 
-        ? `Email notification sent to IT admin (${primaryAdminEmail}) and ${allRecipients.length - 1} IT staff members.`
-        : `Email notification logged (Simulated mode). Recipient queue: ${allRecipients.join(", ")}`,
+        ? `Ticket notification successfully sent to IT administrator (${allRecipients.join(", ")}).`
+        : `Ticket notification logged for IT administrator (${allRecipients.join(", ")}).`,
       recipients: allRecipients,
       ticketNumber: ticket.ticketNumber,
       status: sendStatus,
@@ -559,34 +612,32 @@ Elimisha Watoto Foundation IT Operations`;
   }
 });
 
-// Ticket Resolved Notification Endpoint
+// Ticket Resolved Notification Endpoint (Tickets Resolved -> Sent ONLY to Staff/Reporter)
 apiRouter.post("/notifications/ticket-resolved", async (req, res) => {
   try {
-    const { ticket, resolutionNotes, resolvedBy } = req.body;
+    const { ticket, resolutionNotes, resolvedBy, testRecipient } = req.body;
 
     if (!ticket || !ticket.ticketNumber) {
       return res.status(400).json({ error: "Invalid ticket payload" });
     }
 
-    const recipientEmail = ticket.reporterEmail?.trim().toLowerCase();
-    const primaryAdminEmail = process.env.IT_SUPPORT_EMAIL || "it@elimishawatoto.org";
+    const reporterEmail = (ticket.reporterEmail || "").trim().toLowerCase();
     
-    // Send to reporting employee, with CC to IT Support
-    const allRecipients = Array.from(
-      new Set(
-        [recipientEmail, primaryAdminEmail]
-          .filter((email: string) => Boolean(email) && email.includes("@"))
-      )
-    );
-
-    if (allRecipients.length === 0) {
-      return res.status(400).json({ error: "No valid recipient email address for employee or IT desk" });
+    // STRICT RULE: Only the staff member who raised the ticket receives the resolution notification.
+    // The IT administrator (it@elimishawatoto.org) does NOT receive this resolution email.
+    let allRecipients: string[];
+    if (testRecipient && typeof testRecipient === 'string' && testRecipient.includes('@')) {
+      allRecipients = [testRecipient.trim().toLowerCase()];
+    } else if (reporterEmail && reporterEmail.includes("@")) {
+      allRecipients = [reporterEmail];
+    } else {
+      return res.status(400).json({ error: "No valid staff email address found on ticket to receive resolution notification" });
     }
 
     const technicianName = resolvedBy || "IT Support Desk";
     const notesText = resolutionNotes || ticket.resolutionNotes || "Issue has been verified and resolved by the IT support team.";
     const subject = `[RESOLVED] Ticket ${ticket.ticketNumber}: ${ticket.title}`;
-    const appUrl = process.env.APP_URL || "https://ais-pre-b75v64w3m4o26ytkwlo4dg-396190362785.europe-west2.run.app";
+    const itWorkspaceUrl = (process.env.IT_WORKSPACE_URL || "https://it.elimishawatoto.org").trim();
 
     const htmlContent = `
 <!DOCTYPE html>
@@ -674,11 +725,11 @@ apiRouter.post("/notifications/ticket-resolved", async (req, res) => {
       </div>
 
       <div style="text-align: center; margin-top: 20px;">
-        <a href="${appUrl}?portal=employee" class="btn" style="color: #ffffff;">View Ticket in Employee Portal</a>
+        <a href="${itWorkspaceUrl}?portal=employee" class="btn" style="color: #ffffff;">View Ticket in Employee Portal</a>
       </div>
     </div>
     <div class="footer">
-      Sent to <strong>${recipientEmail || 'your staff account'}</strong>.<br/>
+      Sent to staff member <strong>${allRecipients.join(", ")}</strong>.<br/>
       Elimisha Watoto Foundation • IT Service Desk • <strong>it@elimishawatoto.org</strong>
     </div>
   </div>
@@ -694,9 +745,9 @@ Category: ${ticket.category}
 Resolution Notes:
 ${notesText}
 
-If you continue to experience problems, you can reopen this ticket or contact IT Support at ${primaryAdminEmail}.
+If you have questions or need further assistance, you can contact IT Support at it@elimishawatoto.org or reopen your ticket in the portal.
 
-View in Portal: ${appUrl}?portal=employee
+View in Portal: ${itWorkspaceUrl}?portal=employee
 Elimisha Watoto Foundation IT Helpdesk`;
 
     let sendStatus: 'sent' | 'simulated' = 'simulated';
@@ -707,18 +758,7 @@ Elimisha Watoto Foundation IT Helpdesk`;
 
     if (smtpConfig.configured) {
       try {
-        const transporter = nodemailer.createTransport({
-          host: smtpConfig.host,
-          port: smtpConfig.port,
-          secure: smtpConfig.port === 465,
-          auth: {
-            user: smtpConfig.user,
-            pass: smtpConfig.pass,
-          },
-          tls: {
-            rejectUnauthorized: false,
-          },
-        });
+        const transporter = createMailTransporter(smtpConfig);
 
         const info = await transporter.sendMail({
           from: smtpConfig.from,
@@ -730,14 +770,14 @@ Elimisha Watoto Foundation IT Helpdesk`;
 
         sendStatus = 'sent';
         messageId = info.messageId;
-        console.log(`[GOOGLE WORKSPACE RESOLUTION EMAIL SENT] Ticket ${ticket.ticketNumber} to employee: ${allRecipients.join(", ")} | ID: ${info.messageId}`);
+        console.log(`[GOOGLE WORKSPACE RESOLUTION EMAIL SENT] Ticket ${ticket.ticketNumber} to staff member: ${allRecipients.join(", ")} | ID: ${info.messageId}`);
       } catch (err: any) {
         smtpError = err?.message || String(err);
         console.error(`[SMTP ERROR] Failed to send resolution email via Google Workspace / SMTP:`, smtpError);
         sendStatus = 'simulated';
       }
     } else {
-      console.log(`[RESOLUTION EMAIL DISPATCHED] (Simulated / Logged for Employee: ${recipientEmail})`);
+      console.log(`[RESOLUTION EMAIL DISPATCHED] (Simulated / Logged for Staff: ${allRecipients.join(", ")})`);
       console.log(`To: ${allRecipients.join(", ")}`);
       console.log(`Subject: ${subject}`);
       console.log(`Ticket: ${ticket.ticketNumber} - ${ticket.title}`);
@@ -753,7 +793,7 @@ Elimisha Watoto Foundation IT Helpdesk`;
       timestamp: new Date().toISOString(),
       status: sendStatus,
       error: smtpError,
-      preview: `Ticket ${ticket.ticketNumber} resolved for employee ${ticket.reporterName} (${ticket.reporterEmail})`,
+      preview: `Resolution notification for ticket ${ticket.ticketNumber} sent to staff member (${allRecipients.join(", ")})`,
     };
     emailNotificationLogs.unshift(logEntry);
     if (emailNotificationLogs.length > 50) emailNotificationLogs.pop();
@@ -761,7 +801,7 @@ Elimisha Watoto Foundation IT Helpdesk`;
     return res.json({
       success: true,
       message: sendStatus === 'sent'
-        ? `Resolution email successfully sent to ${allRecipients.join(", ")}.`
+        ? `Resolution email successfully sent to staff member (${allRecipients.join(", ")}).`
         : `Resolution email logged (Simulated mode for ${allRecipients.join(", ")}).`,
       recipients: allRecipients,
       ticketNumber: ticket.ticketNumber,
@@ -776,11 +816,149 @@ Elimisha Watoto Foundation IT Helpdesk`;
   }
 });
 
-// Get recent notification dispatch log
+// Get recent notification dispatch log and SMTP status
 apiRouter.get("/notifications/recent", (_req, res) => {
+  const smtpConfig = getSmtpConfig();
   res.json({
     primaryAdminEmail: process.env.IT_SUPPORT_EMAIL || "it@elimishawatoto.org",
-    smtpConfigured: Boolean(process.env.SMTP_HOST && process.env.SMTP_USER),
+    smtpConfigured: smtpConfig.configured,
+    provider: "Google Workspace (smtp.gmail.com)",
+    activeSender: smtpConfig.user,
+    fromHeader: smtpConfig.from,
     logs: emailNotificationLogs,
+  });
+});
+
+// Test Live Email Dispatch Endpoint & update credentials if valid
+apiRouter.post("/notifications/test-email", async (req, res) => {
+  try {
+    const { targetEmail, smtpUser, smtpPass } = req.body || {};
+    
+    // If testing custom credentials provided in the request
+    let customConfig: ReturnType<typeof getSmtpConfig> | null = null;
+    if (smtpPass) {
+      const cleanPass = String(smtpPass).replace(/[\s'"]/g, "").trim();
+      const cleanUser = String(smtpUser || getSmtpConfig().user || "it@elimishawatoto.org").trim();
+      customConfig = {
+        user: cleanUser,
+        pass: cleanPass,
+        rawPass: String(smtpPass),
+        host: "smtp.gmail.com",
+        port: 465,
+        from: `"Elimisha Watoto IT Helpdesk" <${cleanUser}>`,
+        configured: Boolean(cleanUser && cleanPass),
+      };
+    }
+
+    const smtpConfig = customConfig || getSmtpConfig();
+    const recipient = (targetEmail || smtpConfig.user || "it@elimishawatoto.org").trim();
+
+    if (!smtpConfig.configured) {
+      return res.status(400).json({
+        success: false,
+        error: "SMTP credentials not configured. Please check SMTP_USER and SMTP_PASS.",
+        config: { user: smtpConfig.user, configured: false }
+      });
+    }
+
+    const transporter = createMailTransporter(smtpConfig);
+
+    // Verify SMTP connection
+    await new Promise<void>((resolve, reject) => {
+      transporter.verify((error) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
+
+    const info = await transporter.sendMail({
+      from: smtpConfig.from,
+      to: recipient,
+      subject: `[TEST] Elimisha 360 - Google Workspace Live Email Verification (${new Date().toLocaleTimeString()})`,
+      text: `Hello IT Administrator,\n\nThis is a verified live test email dispatched from your Elimisha 360 IT Operations Service Desk.\n\nSender: ${smtpConfig.user}\nRecipient: ${recipient}\nTimestamp: ${new Date().toISOString()}\nStatus: Live SMTP Connected & Authenticated via Google Workspace.\n\nAutomated ticket submission alerts and employee resolution emails are functioning in production.`,
+      html: `
+<div style="font-family: Arial, sans-serif; max-width: 540px; margin: 20px auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; background: #ffffff;">
+  <div style="background: #0284c7; padding: 18px 24px; color: #ffffff;">
+    <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.85;">Elimisha Watoto Foundation</div>
+    <h2 style="margin: 4px 0 0 0; font-size: 18px;">Live Email Verification Test</h2>
+  </div>
+  <div style="padding: 24px; color: #334155; line-height: 1.6;">
+    <p style="margin-top: 0;">Hello IT Administrator,</p>
+    <div style="background: #f0fdf4; border-left: 4px solid #10b981; padding: 12px 16px; border-radius: 4px; color: #166534; font-size: 14px; margin: 16px 0;">
+      <strong>✓ Google Workspace SMTP is connected!</strong> Live email delivery has been verified successfully.
+    </div>
+    <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin: 16px 0;">
+      <tr>
+        <td style="padding: 6px 0; color: #64748b;"><strong>Sender Account:</strong></td>
+        <td style="padding: 6px 0; color: #0f172a;">${smtpConfig.user}</td>
+      </tr>
+      <tr>
+        <td style="padding: 6px 0; color: #64748b;"><strong>Recipient:</strong></td>
+        <td style="padding: 6px 0; color: #0f172a;">${recipient}</td>
+      </tr>
+      <tr>
+        <td style="padding: 6px 0; color: #64748b;"><strong>Provider:</strong></td>
+        <td style="padding: 6px 0; color: #0f172a;">Google Workspace (smtp.gmail.com)</td>
+      </tr>
+      <tr>
+        <td style="padding: 6px 0; color: #64748b;"><strong>Timestamp:</strong></td>
+        <td style="padding: 6px 0; color: #0f172a;">${new Date().toISOString()}</td>
+      </tr>
+    </table>
+    <p style="font-size: 13px; color: #64748b; margin-bottom: 0;">
+      All ticket submission alerts and employee resolution emails are dispatched live through this connection.
+    </p>
+  </div>
+</div>`
+    });
+
+    // If verification succeeded and custom credentials were provided, save them to runtime overrides!
+    if (customConfig) {
+      runtimeSmtpOverrides.user = customConfig.user;
+      runtimeSmtpOverrides.pass = customConfig.pass;
+      runtimeSmtpOverrides.from = customConfig.from;
+    }
+
+    const logEntry = {
+      id: `notif-test-${Date.now()}`,
+      ticketNumber: "TEST-VERIFY",
+      recipients: [recipient],
+      subject: "Google Workspace Live Email Verification",
+      timestamp: new Date().toISOString(),
+      status: 'sent' as const,
+      preview: `Verified live test email sent to ${recipient} via Google Workspace`,
+    };
+    emailNotificationLogs.unshift(logEntry);
+
+    return res.json({
+      success: true,
+      message: `Test email successfully dispatched to ${recipient}!`,
+      messageId: info.messageId,
+      recipient,
+      sender: smtpConfig.user,
+    });
+  } catch (err: any) {
+    console.error("Test email dispatch error:", err);
+    return res.status(500).json({
+      success: false,
+      error: err.message || "Failed to send test email",
+      hint: "Verify Google Workspace account has 2-Step Verification and a valid App Password.",
+    });
+  }
+});
+
+// Update active SMTP credentials at runtime
+apiRouter.post("/notifications/config", (req, res) => {
+  const { smtpUser, smtpPass } = req.body || {};
+  if (smtpUser) runtimeSmtpOverrides.user = String(smtpUser).trim();
+  if (smtpPass) runtimeSmtpOverrides.pass = String(smtpPass).replace(/\s+/g, "").trim();
+  if (smtpUser) runtimeSmtpOverrides.from = `"Elimisha Watoto IT Helpdesk" <${smtpUser}>`;
+
+  const updated = getSmtpConfig();
+  res.json({
+    success: true,
+    message: "Google Workspace SMTP credentials updated for runtime.",
+    user: updated.user,
+    configured: updated.configured,
   });
 });

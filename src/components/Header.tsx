@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import {
   Bell,
+  Mail,
   LogOut,
   Download,
   FileSpreadsheet,
@@ -31,6 +32,7 @@ interface HeaderProps {
   onSwitchToEmployeePortal?: () => void;
   onToggleMobileSidebar?: () => void;
   isMobileSidebarOpen?: boolean;
+  onOpenEmailDiagnostics?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -46,6 +48,7 @@ export const Header: React.FC<HeaderProps> = ({
   onSwitchToEmployeePortal,
   onToggleMobileSidebar,
   isMobileSidebarOpen,
+  onOpenEmailDiagnostics,
 }) => {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showDataMenu, setShowDataMenu] = useState(false);
@@ -252,6 +255,18 @@ export const Header: React.FC<HeaderProps> = ({
             )}
           </div>
 
+          {/* Google Workspace Email Diagnostics Hub Button */}
+          {onOpenEmailDiagnostics && (
+            <button
+              onClick={onOpenEmailDiagnostics}
+              className="relative p-2 rounded-xl text-slate-600 hover:text-blue-700 hover:bg-blue-50 transition-colors cursor-pointer"
+              title="Google Workspace & Email Dispatch Diagnostics"
+            >
+              <Mail className="w-4.5 h-4.5 sm:w-5 sm:h-5" />
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-white" />
+            </button>
+          )}
+
           {/* Notification Bell with Badge */}
           <div className="relative">
             <button
@@ -296,6 +311,21 @@ export const Header: React.FC<HeaderProps> = ({
                       </div>
                     ))}
                   </div>
+
+                  {onOpenEmailDiagnostics && (
+                    <div className="p-2 border-t border-slate-100 bg-slate-50/70">
+                      <button
+                        onClick={() => {
+                          setShowNotifications(false);
+                          onOpenEmailDiagnostics();
+                        }}
+                        className="w-full text-left px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50 rounded-lg flex items-center gap-2 transition-colors cursor-pointer"
+                      >
+                        <Mail className="w-3.5 h-3.5" />
+                        <span>Google Workspace & Email Delivery Hub</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               </>
             )}

@@ -14,6 +14,7 @@ import {
   X,
   LifeBuoy,
   UserCheck,
+  Mail,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -25,6 +26,7 @@ interface SidebarProps {
   onSwitchToEmployeePortal?: () => void;
   isMobileOpen?: boolean;
   onCloseMobile?: () => void;
+  onOpenEmailDiagnostics?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -36,6 +38,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSwitchToEmployeePortal,
   isMobileOpen,
   onCloseMobile,
+  onOpenEmailDiagnostics,
 }) => {
   const isAdmin = !currentUser || currentUser.role === 'Admin';
 
@@ -157,6 +160,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </button>
                 );
               })}
+
+              {onOpenEmailDiagnostics && (
+                <button
+                  onClick={() => {
+                    onOpenEmailDiagnostics();
+                    onCloseMobile?.();
+                  }}
+                  className="w-full text-left px-4 py-2.5 rounded-xl text-sm transition-all cursor-pointer flex items-center justify-between font-medium text-slate-300 hover:text-white hover:bg-slate-800/70"
+                >
+                  <div className="flex items-center gap-3">
+                    <Mail className="w-4 h-4 shrink-0 text-blue-400" />
+                    <span>Email & Alerts Hub</span>
+                  </div>
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-slate-900" />
+                </button>
+              )}
             </nav>
           </div>
         </div>

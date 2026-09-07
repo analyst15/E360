@@ -59,6 +59,7 @@ import { EmployeePortalPage } from './components/EmployeePortalPage';
 import { WorkplacePortalsHub } from './components/WorkplacePortalsHub';
 import { LoginPage } from './components/LoginPage';
 import { ITStaffDashboardView } from './components/ITStaffDashboardView';
+import { EmailDiagnosticsModal } from './components/EmailDiagnosticsModal';
 import { sendTicketCreatedNotification, sendTicketResolvedNotification } from './utils/notifications';
 
 export default function App() {
@@ -107,6 +108,7 @@ export default function App() {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showEmailDiagnostics, setShowEmailDiagnostics] = useState(false);
   const [createPrefill, setCreatePrefill] = useState<{
     category?: TicketCategory;
     title?: string;
@@ -306,16 +308,10 @@ export default function App() {
     setTickets(prev => [newTicket, ...prev]);
     saveTicketToFirestore(newTicket);
 
-    // Extract all IT staff & admin email addresses
-    const itStaffEmails = users
-      .filter(u => u.role === 'IT Staff' || u.role === 'Admin')
-      .map(u => u.email)
-      .filter(Boolean);
-
-    // Send email alert to IT Admin (it@elimishawatoto.org) and IT Staff
-    sendTicketCreatedNotification(newTicket, itStaffEmails).then(result => {
+    // Send email alert to IT Administrator (it@elimishawatoto.org)
+    sendTicketCreatedNotification(newTicket).then(result => {
       if (result?.success) {
-        console.log(`Email notification dispatched for ticket ${newTicket.ticketNumber} to IT admin & staff:`, result.recipients);
+        console.log(`Email notification dispatched for ticket ${newTicket.ticketNumber} to IT Administrator:`, result.recipients);
       }
     }).catch(err => {
       console.error('Failed to dispatch ticket notification email:', err);
@@ -612,6 +608,7 @@ export default function App() {
         onSwitchToEmployeePortal={() => switchPortalMode('employee')}
         onToggleMobileSidebar={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
         isMobileSidebarOpen={isMobileSidebarOpen}
+        onOpenEmailDiagnostics={() => setShowEmailDiagnostics(true)}
       />
 
       {/* App Body with Sidebar & Content */}
@@ -628,6 +625,7 @@ export default function App() {
           onSwitchToEmployeePortal={() => switchPortalMode('employee')}
           isMobileOpen={isMobileSidebarOpen}
           onCloseMobile={() => setIsMobileSidebarOpen(false)}
+          onOpenEmailDiagnostics={() => setShowEmailDiagnostics(true)}
         />
 
         {/* Main View Container */}
@@ -787,6 +785,14 @@ export default function App() {
           initialDescription={createPrefill.description}
         />
       )}
+
+      {/* Google Workspace Email & Notifications Diagnostics Modal */}
+      <EmailDiagnosticsModal
+        isOpen={showEmailDiagnostics}
+        onClose={() => setShowEmailDiagnostics(false)}
+        adminEmail="it@elimishawatoto.org"
+        userEmail={currentUser?.email || 'techanalyst41@gmail.com'}
+      />
     </div>
   );
 }
