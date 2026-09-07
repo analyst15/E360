@@ -70,3 +70,15 @@ The server will start on port `3000`.
 npm run build
 npm start
 ```
+
+### 5. Deploying to Vercel
+The repository includes a ready-to-use `vercel.json` and serverless API bridge (`api/index.ts`):
+1. Import the repository into your Vercel dashboard.
+2. Vercel automatically detects the Vite framework and uses `dist` as the build output directory.
+3. In your Vercel Project Settings > **Environment Variables**, add:
+   - `GEMINI_API_KEY`: Your Google Gemini API key.
+   - `APP_URL`: Your Vercel deployment URL (e.g., `https://your-app.vercel.app`).
+   - `IT_SUPPORT_EMAIL`: `it@elimishawatoto.org`.
+   - `SMTP_USER`, `SMTP_PASS`, `SMTP_HOST`, `SMTP_PORT` (for Google Workspace email delivery).
+4. `vercel.json` ensures all client-side routes (like `/portal`, `/dashboard`, `/tickets`) rewrite cleanly to `/index.html` on refresh, preventing 404 NOT_FOUND errors.
+
