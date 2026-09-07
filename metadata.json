@@ -1,5 +1,5 @@
 {
-  "name": "IT Support Desk",
+  "name": "Elimisha 360",
   "description": "Comprehensive IT Service Desk & Support Ticketing System with staff workplace portals launcher, smart AI triage, Kanban workflows, diagnostics copilot, and knowledge base.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
