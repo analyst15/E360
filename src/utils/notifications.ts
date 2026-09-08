@@ -10,6 +10,16 @@ export interface NotificationResult {
   dispatchedAt: string;
 }
 
+async function safeParseJson<T>(res: Response): Promise<{ ok: boolean; data: T | null; rawText: string }> {
+  const rawText = await res.text();
+  try {
+    const data = JSON.parse(rawText) as T;
+    return { ok: res.ok, data, rawText };
+  } catch {
+    return { ok: false, data: null, rawText };
+  }
+}
+
 /**
  * Dispatches an automated email notification when a new ticket is submitted.
  * Recipient: IT Administrator ONLY (it@elimishawatoto.org)
@@ -30,13 +40,12 @@ export async function sendTicketCreatedNotification(
       }),
     });
 
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
-      console.warn('Failed to send email notification:', errData);
+    const { ok, data } = await safeParseJson<NotificationResult>(res);
+    if (!ok || !data) {
+      console.warn('Failed to send email notification:', data);
       return null;
     }
 
-    const data: NotificationResult = await res.json();
     return data;
   } catch (err) {
     console.error('Error dispatching ticket email notification:', err);
@@ -66,13 +75,12 @@ export async function sendTicketResolvedNotification(
       }),
     });
 
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
-      console.warn('Failed to send ticket resolution email notification:', errData);
+    const { ok, data } = await safeParseJson<NotificationResult>(res);
+    if (!ok || !data) {
+      console.warn('Failed to send ticket resolution email notification:', data);
       return null;
     }
 
-    const data: NotificationResult = await res.json();
     return data;
   } catch (err) {
     console.error('Error dispatching ticket resolution email notification:', err);
@@ -86,8 +94,9 @@ export async function sendTicketResolvedNotification(
 export async function getRecentNotificationLogs() {
   try {
     const res = await fetch('/api/notifications/recent');
-    if (!res.ok) return null;
-    return await res.json();
+    const { ok, data } = await safeParseJson<any>(res);
+    if (!ok || !data) return null;
+    return data;
   } catch (err) {
     console.error('Error fetching notification logs:', err);
     return null;
@@ -121,13 +130,27 @@ export async function testSmtpConnection(
       }),
     });
 
-    const data = await res.json();
-    return data;
+    const { ok, data, rawText } = await safeParseJson<TestEmailResponse>(res);
+
+    if (data && typeof data === 'object') {
+      return data;
+    }
+
+    // Handled non-JSON error response (e.g. from Vercel Serverless Function or proxy)
+    const cleanSnippet = rawText.replace(/<[^>]*>/g, '').trim().slice(0, 250);
+    return {
+      success: false,
+      error: cleanSnippet || `Server error (${res.status} ${res.statusText})`,
+      hint: res.status === 500
+        ? 'The backend serverless function or API route returned an error. Check server logs.'
+        : 'Please verify server connectivity.',
+    };
   } catch (err: any) {
     console.error('Failed to test SMTP connection:', err);
     return {
       success: false,
       error: err.message || 'Network error while attempting to test SMTP delivery',
+      hint: 'Check network connectivity or backend server availability.',
     };
   }
 }
@@ -142,7 +165,8 @@ export async function updateSmtpConfig(config: { smtpUser: string; smtpPass: str
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(config),
     });
-    return await res.json();
+    const { data } = await safeParseJson<any>(res);
+    return data || { success: false, error: 'Invalid response from server' };
   } catch (err: any) {
     return { success: false, error: err.message };
   }

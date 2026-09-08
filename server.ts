@@ -25,6 +25,14 @@ async function startServer() {
   // Mount API Routes
   app.use("/api", apiRouter);
 
+  // Ensure unmatched /api/* requests return JSON 404 rather than the HTML SPA page
+  app.all("/api/*", (_req, res) => {
+    res.status(404).json({
+      success: false,
+      error: `API route not found: ${_req.method} ${_req.url}`,
+    });
+  });
+
   // Vite middleware for dev or static files for production
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

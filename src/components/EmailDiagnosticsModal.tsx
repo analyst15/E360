@@ -109,7 +109,19 @@ export const EmailDiagnosticsModal: React.FC<EmailDiagnosticsModalProps> = ({
           testRecipient: testRecipient,
         }),
       });
-      const data = await res.json();
+      const rawText = await res.text();
+      let data: any = {};
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        setTestResult({
+          success: false,
+          error: rawText.replace(/<[^>]*>/g, '').trim().slice(0, 250) || `Server error (${res.status} ${res.statusText})`,
+          hint: 'The backend endpoint could not be reached or returned an unexpected response.',
+        });
+        return;
+      }
+
       if (res.ok && data.success && data.status === 'sent') {
         setTestResult({
           success: true,
@@ -122,7 +134,7 @@ export const EmailDiagnosticsModal: React.FC<EmailDiagnosticsModalProps> = ({
         setTestResult({
           success: false,
           error: data.error || data.warning || data.message || 'Failed to dispatch sample ticket notification',
-          hint: data.warning || 'Check SMTP credentials or network port availability in production environment.',
+          hint: data.warning || data.hint || 'Check SMTP credentials or network port availability in production environment.',
         });
       }
     } catch (err: any) {
@@ -325,11 +337,23 @@ export const EmailDiagnosticsModal: React.FC<EmailDiagnosticsModalProps> = ({
                 ) : (
                   <div className="bg-rose-50 border border-rose-200 text-rose-800 rounded-xl p-4 flex items-start gap-3">
                     <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
-                    <div className="space-y-2 text-xs">
-                      <p className="font-bold text-sm text-rose-900">Google Workspace SMTP Authentication Rejected</p>
+                    <div className="space-y-2 text-xs flex-1">
+                      <p className="font-bold text-sm text-rose-900">
+                        {/535|534|authentication|password|badcredentials|invalid login/i.test(testResult.error || '')
+                          ? 'Google Workspace SMTP Authentication Rejected'
+                          : /server error|function_invocation|500|502|cannot post|not valid json/i.test(testResult.error || '')
+                          ? 'Serverless API Execution Error'
+                          : 'Notification Dispatch Error'}
+                      </p>
                       <div className="bg-rose-100/70 p-2.5 rounded-lg font-mono text-[11px] text-rose-900 break-words">
                         {testResult.error}
                       </div>
+
+                      {testResult.hint && (
+                        <p className="text-[11px] text-rose-800 bg-white/70 p-2 rounded border border-rose-200">
+                          <strong>Note:</strong> {testResult.hint}
+                        </p>
+                      )}
 
                       {/* Diagnostic Guidance */}
                       <div className="bg-white/80 border border-rose-200 rounded-lg p-3 text-slate-700 space-y-2">
