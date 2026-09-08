@@ -117,9 +117,22 @@ export function getSmtpConfig() {
   // 4. Foundation Fail-Safe Fallbacks: Guarantee active production credentials even if env vars were omitted in deployment
   if (!user || user.startsWith("MY_") || !user.includes("@")) user = HARDCODED_FALLBACK_USER;
 
+  // Google Workspace is the authoritative MX for elimishawatoto.org (MX: SMTP.GOOGLE.COM).
+  // Connecting to 'mail.elimishawatoto.org' (old cPanel web IP) fails with 535 Incorrect authentication data.
+  // Any @elimishawatoto.org or @gmail.com mailbox MUST use smtp.gmail.com.
+  if (
+    !host ||
+    host === "mail.elimishawatoto.org" ||
+    host.includes("elimishawatoto.org") ||
+    user.endsWith("@elimishawatoto.org") ||
+    user.endsWith("@gmail.com")
+  ) {
+    host = "smtp.gmail.com";
+  }
+
   // Google Workspace strictly requires a 16-char App Password (e.g. krfz kmad vaqz zbdw).
   // Standard account passwords (like ITEWF@2026) are rejected by Google with 535 / 534.
-  const isGoogle = !host || host === "smtp.gmail.com" || user.endsWith("@elimishawatoto.org") || user.endsWith("@gmail.com");
+  const isGoogle = host === "smtp.gmail.com" || user.endsWith("@elimishawatoto.org") || user.endsWith("@gmail.com");
   if (!pass || pass.startsWith("MY_") || (isGoogle && !isValidGoogleAppPassword(pass))) {
     pass = HARDCODED_FALLBACK_PASS;
   }
