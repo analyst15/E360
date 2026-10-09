@@ -32,6 +32,7 @@ export const EmailDiagnosticsModal: React.FC<EmailDiagnosticsModalProps> = ({
   const [customPassword, setCustomPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSampleTicketLoading, setIsSampleTicketLoading] = useState(false);
+  const [isInProgressLoading, setIsInProgressLoading] = useState(false);
   const [testResult, setTestResult] = useState<TestEmailResponse | null>(null);
   const [recentLogs, setRecentLogs] = useState<any[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
@@ -144,6 +145,70 @@ export const EmailDiagnosticsModal: React.FC<EmailDiagnosticsModalProps> = ({
       });
     } finally {
       setIsSampleTicketLoading(false);
+      loadLogs();
+    }
+  };
+
+  const handleSendSampleInProgress = async () => {
+    setIsInProgressLoading(true);
+    setTestResult(null);
+    try {
+      const res = await fetch('/api/notifications/ticket-in-progress', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ticket: {
+            ticketNumber: `INC-${Math.floor(1000 + Math.random() * 9000)}`,
+            title: 'Verified Test Ticket: Dual monitor docking station connectivity',
+            description: 'This is a live test notification verifying end-to-end email delivery from the Elimisha Watoto Foundation IT Support Desk.',
+            category: 'Equipment Request',
+            priority: 'High',
+            reporterName: 'IT Operations Diagnostics',
+            reporterEmail: testRecipient,
+            reporterDepartment: 'Workplace Tech',
+            assignedAgent: 'David Njuguna (Senior SysAdmin)',
+            assetId: 'LAPTOP-NAI-084',
+          },
+          technicianName: 'David Njuguna (Senior SysAdmin)',
+          notes: 'Technician has picked up this incident ticket and initiated diagnostic troubleshooting on the docking station hardware.',
+          testRecipient: testRecipient,
+        }),
+      });
+      const rawText = await res.text();
+      let data: any = {};
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        setTestResult({
+          success: false,
+          error: rawText.replace(/<[^>]*>/g, '').trim().slice(0, 250) || `Server error (${res.status} ${res.statusText})`,
+          hint: 'The backend endpoint could not be reached or returned an unexpected response.',
+        });
+        return;
+      }
+
+      if (res.ok && data.success && data.status === 'sent') {
+        setTestResult({
+          success: true,
+          message: `Sample In-Progress Alert dispatched to staff member ${data.recipients?.join(', ')}${data.port ? ` (Port ${data.port})` : ''}!`,
+          recipient: testRecipient,
+          sender: data.sender || 'it@elimishawatoto.org',
+          messageId: data.messageId,
+        });
+      } else {
+        setTestResult({
+          success: false,
+          error: data.error || data.warning || data.message || 'Failed to dispatch in-progress sample notification',
+          hint: data.warning || data.hint || 'Check SMTP credentials or network port availability in production environment.',
+        });
+      }
+    } catch (err: any) {
+      setTestResult({
+        success: false,
+        error: err?.message || String(err),
+      });
+    } finally {
+      setIsInProgressLoading(false);
       loadLogs();
     }
   };
@@ -272,29 +337,48 @@ export const EmailDiagnosticsModal: React.FC<EmailDiagnosticsModalProps> = ({
                   <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
                   <span>Google Workspace ({serverStatus.provider || 'smtp.gmail.com:587/465'})</span>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
                     onClick={handleSendSampleTicket}
-                    disabled={isSampleTicketLoading || isLoading}
+                    disabled={isSampleTicketLoading || isInProgressLoading || isLoading}
                     className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border border-slate-200 disabled:opacity-50"
                     title="Sends an actual formatted New Ticket alert to your inbox"
                   >
                     {isSampleTicketLoading ? (
                       <>
                         <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-600" />
-                        Dispatching Ticket Alert...
+                        Dispatching New Alert...
                       </>
                     ) : (
                       <>
                         <Mail className="w-3.5 h-3.5 text-blue-600" />
-                        Send Sample Ticket Alert
+                        Sample New Ticket
+                      </>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSendSampleInProgress}
+                    disabled={isSampleTicketLoading || isInProgressLoading || isLoading}
+                    className="px-3.5 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border border-blue-200 disabled:opacity-50"
+                    title="Sends an actual formatted In-Progress notification to your inbox"
+                  >
+                    {isInProgressLoading ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-600" />
+                        Dispatching In-Progress...
+                      </>
+                    ) : (
+                      <>
+                        <Clock className="w-3.5 h-3.5 text-blue-600" />
+                        Sample In-Progress Alert
                       </>
                     )}
                   </button>
                   <button
                     type="submit"
-                    disabled={isLoading || isSampleTicketLoading}
+                    disabled={isLoading || isSampleTicketLoading || isInProgressLoading}
                     className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold flex items-center gap-2 transition-colors cursor-pointer shadow-xs disabled:opacity-50"
                   >
                     {isLoading ? (

@@ -166,3 +166,34 @@ export interface EmployeeNotification {
   isRead: boolean;
   type: 'created' | 'status_changed' | 'assigned' | 'comment_added' | 'info';
 }
+
+export type AnnouncementSeverity = 'outage' | 'maintenance' | 'warning' | 'info';
+
+export interface PortalAnnouncement {
+  id: string;
+  title: string;
+  message: string;
+  severity: AnnouncementSeverity;
+  affectedSystem?: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  expectedResolution?: string;
+  authorName?: string;
+}
+
+export interface DownloadDocument {
+  id: string;
+  title: string;
+  downloadUrl: string;
+  fileName?: string;
+  fileType?: string;
+  fileSize?: string;
+  category?: string;
+  description?: string;
+  subtitle?: string;
+  updatedDate?: string;
+  isFeatured?: boolean;
+  tags?: string[];
+  instructions?: string[];
+}

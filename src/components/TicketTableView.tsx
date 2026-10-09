@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Ticket, FilterState, TicketStatus, TicketPriority, TicketCategory, TicketTier } from '../types';
 import { PriorityBadge, StatusBadge, CategoryBadge } from './Badges';
-import { formatTimeAgo } from '../utils/time';
+import { formatTimeAgo, formatExactDate, formatExactTime, formatExactDateTime } from '../utils/time';
 import { IT_AGENTS } from '../data/mockData';
 import {
   Filter,
@@ -334,6 +334,7 @@ export const TicketTableView: React.FC<TicketTableViewProps> = ({
                 <th className="p-3.5 w-28">Status</th>
                 <th className="p-3.5 w-36">Assignee</th>
                 <th className="p-3.5 w-28">Reporter</th>
+                <th className="p-3.5 w-36 whitespace-nowrap">Created Time</th>
                 <th className="p-3.5 w-20 text-right">Actions</th>
               </tr>
             </thead>
@@ -410,6 +411,17 @@ export const TicketTableView: React.FC<TicketTableViewProps> = ({
                       <div className="text-[10px] text-slate-500">{ticket.reporterDepartment}</div>
                     </td>
 
+                    {/* Created Time */}
+                    <td className="p-3.5 whitespace-nowrap">
+                      <div className="text-slate-800 font-medium text-xs flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                        <span>{formatExactTime(ticket.createdAt)}</span>
+                      </div>
+                      <div className="text-[11px] text-slate-500 mt-0.5" title={`Created: ${formatExactDateTime(ticket.createdAt)}`}>
+                        {formatExactDate(ticket.createdAt)} <span className="text-slate-400">({formatTimeAgo(ticket.createdAt)})</span>
+                      </div>
+                    </td>
+
                     {/* Actions */}
                     <td className="p-3.5 text-right whitespace-nowrap" onClick={e => e.stopPropagation()}>
                       <button
@@ -426,7 +438,7 @@ export const TicketTableView: React.FC<TicketTableViewProps> = ({
 
               {filteredTickets.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="p-10 text-center text-slate-400">
+                  <td colSpan={10} className="p-10 text-center text-slate-400">
                     <div className="flex flex-col items-center justify-center space-y-2">
                       <Layers className="w-8 h-8 text-slate-400" />
                       <p className="font-medium text-sm text-slate-700">No tickets found matching your filters.</p>

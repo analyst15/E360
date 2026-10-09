@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Ticket, TicketStatus, TicketPriority, TicketTier, CommentType, TicketComment, ITAsset } from '../types';
 import { PriorityBadge, StatusBadge, CategoryBadge } from './Badges';
-import { formatTimeAgo } from '../utils/time';
+import { formatTimeAgo, formatExactDateTime } from '../utils/time';
 import { IT_AGENTS, CANNED_RESPONSES } from '../data/mockData';
 import {
   X,
@@ -323,10 +323,13 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                 </div>
 
                 <div className="flex items-center gap-1.5">
-                  <Clock className="w-3.5 h-3.5 text-slate-400" />
+                  <Clock className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                   <div>
-                    <span className="text-slate-500">Created:</span> <strong className="text-slate-800">{formatTimeAgo(ticket.createdAt)}</strong>
-                    <div className="text-[11px] text-slate-500">Updated: {formatTimeAgo(ticket.updatedAt)}</div>
+                    <span className="text-slate-500">Created:</span>{' '}
+                    <strong className="text-slate-800">{formatExactDateTime(ticket.createdAt)}</strong>
+                    <div className="text-[11px] text-slate-500">
+                      <span>({formatTimeAgo(ticket.createdAt)})</span> • Updated: {formatTimeAgo(ticket.updatedAt)}
+                    </div>
                   </div>
                 </div>
               </div>

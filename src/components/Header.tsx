@@ -15,13 +15,15 @@ import {
   X,
   Trash2,
   AlertTriangle,
+  Radio,
 } from 'lucide-react';
-import { Ticket, UserAccount } from '../types';
+import { Ticket, UserAccount, PortalAnnouncement } from '../types';
 import { WORKPLACE_PORTALS } from '../data/workplacePortals';
 
 interface HeaderProps {
   tickets: Ticket[];
   currentUser?: UserAccount | null;
+  announcements?: PortalAnnouncement[];
   onExportJSON: () => void;
   onExportCSV: () => void;
   onResetData: () => void;
@@ -33,11 +35,13 @@ interface HeaderProps {
   onToggleMobileSidebar?: () => void;
   isMobileSidebarOpen?: boolean;
   onOpenEmailDiagnostics?: () => void;
+  onOpenAnnouncements?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   tickets,
   currentUser,
+  announcements = [],
   onExportJSON,
   onExportCSV,
   onResetData,
@@ -49,6 +53,7 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleMobileSidebar,
   isMobileSidebarOpen,
   onOpenEmailDiagnostics,
+  onOpenAnnouncements,
 }) => {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showDataMenu, setShowDataMenu] = useState(false);
@@ -102,13 +107,6 @@ export const Header: React.FC<HeaderProps> = ({
             }`}>
               {displayRole}
             </span>
-            <div 
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-medium"
-              title="Firebase Firestore Cloud Database Connected: elimisha-2739f (ai-studio-itsupportdesk-cc4c29aa-867a-4231-939f-0a38c52e4baa)"
-            >
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span>Firebase Cloud DB Active</span>
-            </div>
           </div>
 
           {/* Quick Workplace Portals Menu */}
@@ -254,6 +252,25 @@ export const Header: React.FC<HeaderProps> = ({
               </>
             )}
           </div>
+
+          {/* Outage & Broadcast Announcements Alert Button */}
+          {onOpenAnnouncements && (
+            <button
+              onClick={onOpenAnnouncements}
+              className={`relative p-2 rounded-xl transition-all cursor-pointer ${
+                announcements.some(a => a.isActive)
+                  ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 ring-1 ring-rose-300'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+              title="System Outage & Employee Portal Broadcast Alerts"
+              aria-label="Broadcast Alerts"
+            >
+              <Radio className={`w-4.5 h-4.5 sm:w-5 sm:h-5 ${announcements.some(a => a.isActive) ? 'animate-pulse text-rose-600' : ''}`} />
+              {announcements.some(a => a.isActive) && (
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-white animate-ping" />
+              )}
+            </button>
+          )}
 
           {/* Google Workspace Email Diagnostics Hub Button */}
           {onOpenEmailDiagnostics && (

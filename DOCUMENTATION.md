@@ -204,7 +204,17 @@ it@elimishawatoto.org       All Assigned IT Staff
   - Incident title and formatted issue description
   - Direct "Open IT Support Workspace" button linking back into the application.
 
-### 5.2 Ticket Resolution Alert (`/api/notifications/ticket-resolved`)
+### 5.2 Ticket In-Progress Alert (`/api/notifications/ticket-in-progress`)
+- **Trigger**: Fired when a technician begins work on an incident, transitions a ticket to **In Progress**, claims a ticket, or responds to an open ticket with an agent comment.
+- **Recipient**: The reporting employee's email address (`ticket.reporterEmail`).
+- **Format**: Branded blue status receipt highlighting:
+  - Work started confirmation banner
+  - Assigned technician name (`technicianName` / `assignedAgent`)
+  - Status indicator (`IN PROGRESS`), category, and priority
+  - Relevant technician update notes or instructions
+  - Direct button to track progress in the Employee Support Portal.
+
+### 5.3 Ticket Resolution Alert (`/api/notifications/ticket-resolved`)
 - **Trigger**: Fired when a technician marks an incident as **Resolved**.
 - **Recipient**: The reporting employee's email address.
 - **Format**: Branded green resolution receipt highlighting:
@@ -213,7 +223,7 @@ it@elimishawatoto.org       All Assigned IT Staff
   - Comprehensive resolution summary and actions taken
   - Instructions on reopening or requesting follow-up support if the issue reoccurs.
 
-### 5.3 Dispatch Logging & Resilience
+### 5.4 Dispatch Logging & Resilience
 - **Fault-Tolerant Delivery**: If SMTP credentials are non-functional or unset, the system logs the full transaction to internal server logs and maintains an in-memory dispatch history accessible via `GET /api/notifications/recent` without crashing the application.
 - **Credential Sanitation**: Automatically removes extraneous spaces often created when copying Google Workspace App Passwords.
 
@@ -446,6 +456,20 @@ interface UserAccount {
     "success": true,
     "message": "Email notification sent to IT admin (it@elimishawatoto.org) and IT staff members.",
     "recipients": ["it@elimishawatoto.org", "tech1@elimishawatoto.org"],
+    "ticketNumber": "INC-8042",
+    "status": "sent"
+  }
+  ```
+
+### Notification: Ticket In Progress
+- **Endpoint**: `POST /api/notifications/ticket-in-progress`
+- **Request Body**: `{ "ticket": { ... }, "technicianName": "Alex Mercer", "notes": "Investigating docking station..." }`
+- **Response**:
+  ```json
+  {
+    "success": true,
+    "message": "In-progress email successfully sent to staff member (employee@elimishawatoto.org).",
+    "recipients": ["employee@elimishawatoto.org"],
     "ticketNumber": "INC-8042",
     "status": "sent"
   }

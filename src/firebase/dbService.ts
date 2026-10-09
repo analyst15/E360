@@ -10,7 +10,7 @@ import {
   Unsubscribe,
 } from 'firebase/firestore';
 import { db, ensureFirebaseAuth } from './config';
-import { Ticket, ITAsset, UserAccount, KBArticle, TicketComment } from '../types';
+import { Ticket, ITAsset, UserAccount, KBArticle, TicketComment, PortalAnnouncement } from '../types';
 import { INITIAL_TICKETS, INITIAL_ASSETS, INITIAL_USERS, INITIAL_KB_ARTICLES } from '../data/mockData';
 import {
   loadTickets as loadLocalTickets,
@@ -21,6 +21,8 @@ import {
   saveUsers as saveLocalUsers,
   loadKBArticles as loadLocalKBArticles,
   saveKBArticles as saveLocalKBArticles,
+  loadAnnouncements as loadLocalAnnouncements,
+  saveAnnouncements as saveLocalAnnouncements,
   getDeletedUserIds,
   recordDeletedUserId,
 } from '../utils/storage';
@@ -29,6 +31,7 @@ const TICKETS_COLLECTION = 'tickets';
 const ASSETS_COLLECTION = 'assets';
 const USERS_COLLECTION = 'users';
 const KB_COLLECTION = 'kbArticles';
+const ANNOUNCEMENTS_COLLECTION = 'announcements';
 
 // ==========================================
 // SEEDING & PURGE HELPERS
@@ -475,3 +478,113 @@ export async function deleteKBArticleFromFirestore(articleId: string): Promise<v
     console.error('Error deleting KB article from Firestore:', err);
   }
 }
+
+// ==========================================
+// PORTAL ANNOUNCEMENTS REALTIME SYNC & OPERATIONS
+// ==========================================
+
+export function subscribeAnnouncements(
+  onData: (announcements: PortalAnnouncement[]) => void,
+  onError?: (err: Error) => void
+): Unsubscribe {
+  try {
+    const colRef = collection(db, ANNOUNCEMENTS_COLLECTION);
+    return onSnapshot(
+      colRef,
+      (snapshot) => {
+        if (!snapshot.empty) {
+          const list: PortalAnnouncement[] = [];
+          snapshot.forEach((docSnap) => {
+            list.push(docSnap.data() as PortalAnnouncement);
+          });
+          list.sort((a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime());
+          saveLocalAnnouncements(list);
+          onData(list);
+        } else {
+          // If Firestore is empty, initialize with default local announcements
+          const local = loadLocalAnnouncements();
+          saveLocalAnnouncements(local);
+          onData(local);
+          // Seed the initial announcement to Firestore so it's globally synced
+          if (local.length > 0) {
+            ensureFirebaseAuth()
+              .then(() => {
+                const batch = writeBatch(db);
+                local.forEach((a) => {
+                  batch.set(doc(db, ANNOUNCEMENTS_COLLECTION, a.id), a, { merge: true });
+                });
+                return batch.commit();
+              })
+              .catch((err) => console.warn('Could not seed initial announcement to Firestore:', err));
+          }
+        }
+      },
+      (err) => {
+        console.warn('Firestore announcements listener error, falling back to local:', err);
+        if (onError) onError(err);
+        onData(loadLocalAnnouncements());
+      }
+    );
+  } catch (e) {
+    console.warn('Failed to subscribe to announcements:', e);
+    onData(loadLocalAnnouncements());
+    return () => {};
+  }
+}
+
+export async function saveAnnouncementToFirestore(announcement: PortalAnnouncement): Promise<void> {
+  try {
+    const local = loadLocalAnnouncements();
+    const existingIndex = local.findIndex((a) => a.id === announcement.id);
+    let updatedList: PortalAnnouncement[];
+    if (existingIndex >= 0) {
+      updatedList = [...local];
+      updatedList[existingIndex] = announcement;
+    } else {
+      updatedList = [announcement, ...local];
+    }
+    saveLocalAnnouncements(updatedList);
+
+    await ensureFirebaseAuth();
+    const docRef = doc(db, ANNOUNCEMENTS_COLLECTION, announcement.id);
+    await setDoc(docRef, announcement, { merge: true });
+  } catch (err) {
+    console.error('Error saving announcement to Firestore:', err);
+  }
+}
+
+export async function deleteAnnouncementFromFirestore(announcementId: string): Promise<void> {
+  try {
+    const updated = loadLocalAnnouncements().filter((a) => a.id !== announcementId);
+    saveLocalAnnouncements(updated);
+
+    await ensureFirebaseAuth();
+    const docRef = doc(db, ANNOUNCEMENTS_COLLECTION, announcementId);
+    await deleteDoc(docRef);
+  } catch (err) {
+    console.error('Error deleting announcement from Firestore:', err);
+  }
+}
+
+export async function toggleAnnouncementActiveInFirestore(
+  announcementId: string,
+  isActive: boolean
+): Promise<void> {
+  try {
+    const local = loadLocalAnnouncements();
+    const updated = local.map((a) =>
+      a.id === announcementId ? { ...a, isActive, updatedAt: new Date().toISOString() } : a
+    );
+    saveLocalAnnouncements(updated);
+
+    await ensureFirebaseAuth();
+    const docRef = doc(db, ANNOUNCEMENTS_COLLECTION, announcementId);
+    await updateDoc(docRef, {
+      isActive,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error('Error toggling announcement active state in Firestore:', err);
+  }
+}
+

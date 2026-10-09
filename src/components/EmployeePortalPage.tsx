@@ -10,12 +10,17 @@ import {
   TicketComment,
   EmployeeNotification,
   ORGANIZATIONAL_DEPARTMENTS,
+  PortalAnnouncement,
 } from '../types';
 import { StatusBadge, PriorityBadge, CategoryBadge } from './Badges';
 import { formatTimeAgo } from '../utils/time';
 import { EmployeeTicketModal } from './EmployeeTicketModal';
 import { WorkplacePortalsHub } from './WorkplacePortalsHub';
+import { PortalAnnouncementBanner } from './PortalAnnouncementBanner';
+import { ManageAnnouncementModal } from './ManageAnnouncementModal';
+import { EmployeeDownloadsView } from './EmployeeDownloadsView';
 import { WORKPLACE_PORTALS } from '../data/workplacePortals';
+import { DOWNLOAD_DOCUMENTS } from '../data/downloadDocuments';
 import {
   Search,
   Plus,
@@ -57,6 +62,9 @@ import {
   BookOpen,
   Eye,
   ArrowRight,
+  Radio,
+  Download,
+  FolderDown,
 } from 'lucide-react';
 
 interface EmployeePortalPageProps {
@@ -65,11 +73,15 @@ interface EmployeePortalPageProps {
   assets: ITAsset[];
   users: UserAccount[];
   currentUser?: UserAccount | null;
+  announcements?: PortalAnnouncement[];
   onCreateTicket: (newTicket: Ticket) => void;
   onAddComment: (ticketId: string, comment: Omit<TicketComment, 'id' | 'timestamp'>) => void;
   onUpvoteKBArticle?: (id: string) => void;
   onSwitchToAdmin?: () => void;
   onLogout?: () => void;
+  onSaveAnnouncement?: (announcement: PortalAnnouncement) => Promise<void> | void;
+  onDeleteAnnouncement?: (id: string) => Promise<void> | void;
+  onToggleAnnouncementActive?: (id: string, isActive: boolean) => Promise<void> | void;
 }
 
 export const EmployeePortalPage: React.FC<EmployeePortalPageProps> = ({
@@ -78,14 +90,19 @@ export const EmployeePortalPage: React.FC<EmployeePortalPageProps> = ({
   assets,
   users,
   currentUser,
+  announcements = [],
   onCreateTicket,
   onAddComment,
   onUpvoteKBArticle,
   onSwitchToAdmin,
   onLogout,
+  onSaveAnnouncement,
+  onDeleteAnnouncement,
+  onToggleAnnouncementActive,
 }) => {
   // Active Tab
-  const [activeTab, setActiveTab] = useState<'tickets' | 'devices' | 'staff' | 'portals' | 'kb' | 'notifications'>('tickets');
+  const [activeTab, setActiveTab] = useState<'tickets' | 'devices' | 'staff' | 'portals' | 'kb' | 'downloads' | 'notifications'>('tickets');
+  const [showManageAnnouncementModal, setShowManageAnnouncementModal] = useState(false);
 
   // Employee Identity (derived from currentUser or localStorage)
   const [selectedEmployeeName, setSelectedEmployeeName] = useState<string>(() => {
@@ -645,6 +662,21 @@ export const EmployeePortalPage: React.FC<EmployeePortalPageProps> = ({
 
           {/* Right Actions: Notifications Bell, Staff Profile, Sign Out */}
           <div className="flex items-center gap-2 sm:gap-3">
+            {/* IT Staff Broadcast & Outage Alerts Control */}
+            {(currentUser?.role === 'Admin' || currentUser?.role === 'IT Staff') && (
+              <button
+                onClick={() => setShowManageAnnouncementModal(true)}
+                className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 shadow-2xs transition-all cursor-pointer"
+                title="Manage broadcast alerts and outage notices for the employee portal"
+              >
+                <Radio className="w-3.5 h-3.5 text-rose-600 animate-pulse" />
+                <span>Broadcast Alert</span>
+                {announcements.some((a) => a.isActive) && (
+                  <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping ml-0.5" />
+                )}
+              </button>
+            )}
+
             {/* Notification Bell Dropdown for Employee */}
             <div className="relative">
               <button
@@ -874,6 +906,18 @@ export const EmployeePortalPage: React.FC<EmployeePortalPageProps> = ({
         </div>
       </header>
 
+      {/* Global Outage and System Announcement Banner */}
+      <PortalAnnouncementBanner
+        announcements={announcements}
+        currentUser={currentUser}
+        onManageAnnouncement={() => setShowManageAnnouncementModal(true)}
+        onToggleActive={(id, active) => {
+          if (onToggleAnnouncementActive) {
+            onToggleAnnouncementActive(id, active);
+          }
+        }}
+      />
+
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         {/* Success Alert Banner */}
@@ -1008,6 +1052,19 @@ export const EmployeePortalPage: React.FC<EmployeePortalPageProps> = ({
                 >
                   <HelpCircle className={`w-4 h-4 shrink-0 ${activeTab === 'kb' ? 'text-white' : 'text-amber-600'}`} />
                   <span>Guides ({kbArticles.length})</span>
+                </button>
+
+                <button
+                  id="emp-tab-downloads"
+                  onClick={() => setActiveTab('downloads')}
+                  className={`px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                    activeTab === 'downloads'
+                      ? 'bg-blue-600 text-white shadow-xs ring-2 ring-blue-600/30'
+                      : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200/90'
+                  }`}
+                >
+                  <Download className={`w-4 h-4 shrink-0 ${activeTab === 'downloads' ? 'text-white' : 'text-teal-600'}`} />
+                  <span>Downloads ({DOWNLOAD_DOCUMENTS.length})</span>
                 </button>
 
                 <button
@@ -1741,6 +1798,23 @@ export const EmployeePortalPage: React.FC<EmployeePortalPageProps> = ({
           </div>
         )}
 
+        {/* 6. Employee Document & Forms Downloads Tab */}
+        {activeTab === 'downloads' && (
+          <EmployeeDownloadsView
+            employeeName={selectedEmployeeName}
+            employeeDepartment={selectedEmployeeDept}
+            onRequestAssistanceWithForm={(docTitle) => {
+              setFormCategory('Other');
+              setFormTitle(`Inquiry regarding ${docTitle}`);
+              setFormDescription(
+                `Hello IT & HR Support, I need assistance regarding the ${docTitle} (e.g. clarification on required signatures, handover approvals, or form submission).`
+              );
+              setFormPriority('Low');
+              setShowRequestForm(true);
+            }}
+          />
+        )}
+
         {/* 5. Notifications Tab */}
         {activeTab === 'notifications' && (
           <div className="space-y-4">
@@ -2180,6 +2254,29 @@ export const EmployeePortalPage: React.FC<EmployeePortalPageProps> = ({
             </div>
           </div>
         </div>
+      )}
+      {/* Manage Outage / Announcement Modal for IT Staff */}
+      {showManageAnnouncementModal && (
+        <ManageAnnouncementModal
+          announcements={announcements}
+          currentUser={currentUser}
+          onSaveAnnouncement={(announcement) => {
+            if (onSaveAnnouncement) {
+              return onSaveAnnouncement(announcement);
+            }
+          }}
+          onDeleteAnnouncement={(id) => {
+            if (onDeleteAnnouncement) {
+              return onDeleteAnnouncement(id);
+            }
+          }}
+          onToggleActive={(id, active) => {
+            if (onToggleAnnouncementActive) {
+              return onToggleAnnouncementActive(id, active);
+            }
+          }}
+          onClose={() => setShowManageAnnouncementModal(false)}
+        />
       )}
     </div>
   );

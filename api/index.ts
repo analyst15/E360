@@ -923,6 +923,222 @@ Elimisha Watoto Foundation IT Helpdesk`;
   }
 });
 
+// Ticket In-Progress Notification Endpoint (Tickets In Progress -> Sent ONLY to Staff/Reporter)
+apiRouter.post("/notifications/ticket-in-progress", async (req, res) => {
+  try {
+    const { ticket, technicianName, notes, testRecipient } = req.body;
+
+    if (!ticket || !ticket.ticketNumber) {
+      return res.status(400).json({ error: "Invalid ticket payload" });
+    }
+
+    const reporterEmail = (ticket.reporterEmail || "").trim().toLowerCase();
+    
+    // Sent to the staff member who submitted the ticket to notify that work has begun
+    let allRecipients: string[];
+    if (testRecipient && typeof testRecipient === 'string' && testRecipient.includes('@')) {
+      allRecipients = [testRecipient.trim().toLowerCase()];
+    } else if (reporterEmail && reporterEmail.includes("@")) {
+      allRecipients = [reporterEmail];
+    } else {
+      return res.status(400).json({ error: "No valid staff email address found on ticket to receive in-progress notification" });
+    }
+
+    const assignedTech = technicianName || ticket.assignedAgent || "IT Support Technician";
+    const updateNotes = notes || "An IT technician has been assigned and is actively investigating your request.";
+    const subject = `[IN PROGRESS] Ticket ${ticket.ticketNumber}: ${ticket.title}`;
+    const itWorkspaceUrl = (process.env.IT_WORKSPACE_URL || "https://it.elimishawatoto.org").trim();
+
+    const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; background-color: #f8fafc; color: #1e293b; }
+    .container { max-width: 600px; margin: 24px auto; background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
+    .header { background: #1e40af; padding: 24px; color: #ffffff; }
+    .header-tag { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: #93c5fd; font-weight: 700; margin-bottom: 4px; }
+    .header-title { font-size: 20px; font-weight: 700; margin: 0; color: #ffffff; }
+    .content { padding: 24px; }
+    .status-banner { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 12px; padding: 14px 18px; margin-bottom: 20px; color: #1e40af; }
+    .section-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin: 16px 0; }
+    .label { font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; margin-bottom: 2px; }
+    .value { font-size: 14px; font-weight: 600; color: #0f172a; }
+    .note-box { background: #ffffff; border-left: 4px solid #3b82f6; padding: 14px 16px; margin-top: 12px; border-radius: 4px; font-size: 13px; line-height: 1.6; color: #334155; }
+    .btn { display: inline-block; background: #2563eb; color: #ffffff; padding: 12px 24px; border-radius: 10px; text-decoration: none; font-weight: 600; font-size: 14px; margin-top: 16px; }
+    .footer { background: #f1f5f9; padding: 16px 24px; font-size: 12px; color: #64748b; border-top: 1px solid #e2e8f0; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="header-tag">Elimisha Watoto Foundation • IT Support Desk</div>
+      <h1 class="header-title">Your Support Ticket is Now In Progress</h1>
+    </div>
+    <div class="content">
+      <div class="status-banner">
+        <strong>Work has started!</strong> Your support ticket has been claimed and is now actively being investigated by our IT team.
+      </div>
+
+      <p style="font-size: 14px; color: #475569; margin-top: 0;">
+        Dear <strong>${ticket.reporterName || 'Colleague'}</strong>,
+      </p>
+
+      <div class="section-box">
+        <table style="width: 100%; border-collapse: collapse;">
+          <tr>
+            <td style="padding: 6px 0; width: 50%;">
+              <div class="label">Ticket Number</div>
+              <div class="value">${ticket.ticketNumber}</div>
+            </td>
+            <td style="padding: 6px 0; width: 50%;">
+              <div class="label">Status</div>
+              <div class="value">
+                <span style="color: #2563eb; font-weight: 700;">IN PROGRESS</span>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 6px 0;">
+              <div class="label">Assigned Technician</div>
+              <div class="value">${assignedTech}</div>
+            </td>
+            <td style="padding: 6px 0;">
+              <div class="label">Priority</div>
+              <div class="value">${ticket.priority || 'Normal'}</div>
+            </td>
+          </tr>
+          <tr>
+            <td colspan="2" style="padding: 6px 0;">
+              <div class="label">Category</div>
+              <div class="value">${ticket.category || 'General Issue'}</div>
+            </td>
+          </tr>
+          ${ticket.assetId ? `
+          <tr>
+            <td colspan="2" style="padding: 6px 0;">
+              <div class="label">Device / Asset</div>
+              <div class="value" style="font-weight: 500;">${ticket.assetId}</div>
+            </td>
+          </tr>
+          ` : ''}
+        </table>
+
+        <div style="margin-top: 12px;">
+          <div class="label">Ticket Summary</div>
+          <div class="value" style="font-size: 14px; color: #1e293b;">${ticket.title}</div>
+        </div>
+
+        ${updateNotes ? `
+        <div style="margin-top: 14px;">
+          <div class="label" style="color: #2563eb;">Latest Update / Notes</div>
+          <div class="note-box">${updateNotes.replace(/\n/g, '<br/>')}</div>
+        </div>
+        ` : ''}
+      </div>
+
+      <div style="background: #eff6ff; border-radius: 10px; padding: 12px 16px; font-size: 12px; color: #1e40af; line-height: 1.5; border: 1px dashed #93c5fd;">
+        <strong>What to expect next:</strong> An IT technician will investigate the problem and apply a solution. If access to your workstation or additional information is needed, we will reach out directly. You will also receive an email confirmation once the issue is resolved.
+      </div>
+
+      <div style="text-align: center; margin-top: 20px;">
+        <a href="${itWorkspaceUrl}?portal=employee" class="btn" style="color: #ffffff;">Track Ticket in Employee Portal</a>
+      </div>
+    </div>
+    <div class="footer">
+      Sent to staff member <strong>${allRecipients.join(", ")}</strong>.<br/>
+      Elimisha Watoto Foundation • IT Service Desk • <strong>it@elimishawatoto.org</strong>
+    </div>
+  </div>
+</body>
+</html>`;
+
+    const textFallback = `[TICKET IN PROGRESS: ${ticket.ticketNumber}]
+Hello ${ticket.reporterName || "Colleague"},
+
+Your support request "${ticket.title}" (${ticket.ticketNumber}) is now being actively worked on by ${assignedTech}.
+
+Status: IN PROGRESS
+Priority: ${ticket.priority}
+Category: ${ticket.category}
+Assigned Technician: ${assignedTech}
+
+Update:
+${updateNotes}
+
+You will receive an email confirmation once the request is resolved.
+
+Track in Portal: ${itWorkspaceUrl}?portal=employee
+Elimisha Watoto Foundation IT Helpdesk`;
+
+    let sendStatus: 'sent' | 'simulated' = 'simulated';
+    let messageId: string | undefined = undefined;
+    let smtpError: string | undefined = undefined;
+    let portUsed: number | undefined = undefined;
+
+    const smtpConfig = getSmtpConfig();
+
+    if (smtpConfig.configured) {
+      try {
+        const dispatchResult = await dispatchMailWithFallback({
+          to: allRecipients,
+          subject,
+          text: textFallback,
+          html: htmlContent,
+        }, smtpConfig);
+
+        sendStatus = 'sent';
+        messageId = dispatchResult.messageId;
+        portUsed = dispatchResult.portUsed;
+        console.log(`[GOOGLE WORKSPACE IN-PROGRESS EMAIL SENT] Ticket ${ticket.ticketNumber} to staff member: ${allRecipients.join(", ")} via Port ${portUsed} | ID: ${messageId}`);
+      } catch (err: any) {
+        smtpError = err?.message || String(err);
+        console.error(`[SMTP ERROR] Failed to send in-progress email via Google Workspace / SMTP:`, smtpError);
+        sendStatus = 'simulated';
+      }
+    } else {
+      console.log(`[IN-PROGRESS EMAIL DISPATCHED] (Simulated / Logged for Staff: ${allRecipients.join(", ")})`);
+      console.log(`To: ${allRecipients.join(", ")}`);
+      console.log(`Subject: ${subject}`);
+      console.log(`Ticket: ${ticket.ticketNumber} - ${ticket.title}`);
+      console.log(`Assigned: ${assignedTech}`);
+    }
+
+    // Record in notification logs
+    const logEntry = {
+      id: `notif-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      ticketNumber: ticket.ticketNumber,
+      recipients: allRecipients,
+      subject,
+      timestamp: new Date().toISOString(),
+      status: sendStatus,
+      error: smtpError,
+      preview: `In-progress notification for ticket ${ticket.ticketNumber} sent to staff member (${allRecipients.join(", ")})${portUsed ? ` via Port ${portUsed}` : ''}`,
+    };
+    emailNotificationLogs.unshift(logEntry);
+    if (emailNotificationLogs.length > 50) emailNotificationLogs.pop();
+
+    return res.json({
+      success: sendStatus === 'sent',
+      message: sendStatus === 'sent'
+        ? `In-progress email successfully sent to staff member (${allRecipients.join(", ")}).`
+        : `In-progress email logged (Delivery could not complete: ${smtpError || 'Simulated mode'}).`,
+      warning: sendStatus !== 'sent' ? (smtpError || 'Email could not be delivered live.') : undefined,
+      recipients: allRecipients,
+      ticketNumber: ticket.ticketNumber,
+      status: sendStatus,
+      port: portUsed,
+      messageId,
+      error: smtpError,
+      dispatchedAt: logEntry.timestamp,
+    });
+  } catch (err: any) {
+    console.error("Ticket in-progress email error:", err);
+    return res.status(500).json({ error: err.message || "Failed to dispatch in-progress email" });
+  }
+});
+
 // Get recent notification dispatch log and SMTP status
 apiRouter.get("/notifications/recent", (_req, res) => {
   const smtpConfig = getSmtpConfig();

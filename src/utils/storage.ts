@@ -1,12 +1,28 @@
-import { Ticket, KBArticle, ITAsset, UserAccount } from '../types';
+import { Ticket, KBArticle, ITAsset, UserAccount, PortalAnnouncement } from '../types';
 import { INITIAL_TICKETS, INITIAL_KB_ARTICLES, INITIAL_ASSETS, INITIAL_USERS } from '../data/mockData';
 
 const TICKETS_KEY = 'it_desk_tickets_v1';
 const KB_KEY = 'it_desk_kb_articles_v1';
 const ASSETS_KEY = 'it_desk_assets_v1';
 const USERS_KEY = 'it_desk_users_v1';
+const ANNOUNCEMENTS_KEY = 'it_desk_announcements_v1';
 const DELETED_USERS_KEY = 'it_desk_deleted_user_ids_v1';
 const INITIALIZED_FLAG = 'it_desk_db_initialized_v3';
+
+export const INITIAL_ANNOUNCEMENTS: PortalAnnouncement[] = [
+  {
+    id: 'announcement-secondary-system',
+    title: 'Secondary System Service Interruption',
+    message: 'The Secondary School academic grading and student portal is temporarily offline due to database maintenance. Our IT engineering team is actively working on restoration.',
+    severity: 'outage',
+    affectedSystem: 'Secondary System',
+    isActive: true,
+    createdAt: new Date(Date.now() - 40 * 60 * 1000).toISOString(),
+    updatedAt: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+    expectedResolution: 'Estimated restoration within 45 minutes',
+    authorName: 'Elimisha IT Operations',
+  },
+];
 
 export function getDeletedUserIds(): Set<string> {
   try {
@@ -176,6 +192,29 @@ export function saveAssets(assets: ITAsset[]): void {
     localStorage.setItem(INITIALIZED_FLAG, 'true');
   } catch (e) {
     console.error('Failed to save assets to localStorage:', e);
+  }
+}
+
+export function loadAnnouncements(): PortalAnnouncement[] {
+  try {
+    const raw = localStorage.getItem(ANNOUNCEMENTS_KEY);
+    if (raw !== null) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.error('Failed to load announcements from localStorage:', e);
+  }
+  return INITIAL_ANNOUNCEMENTS;
+}
+
+export function saveAnnouncements(announcements: PortalAnnouncement[]): void {
+  try {
+    localStorage.setItem(ANNOUNCEMENTS_KEY, JSON.stringify(announcements));
+  } catch (e) {
+    console.error('Failed to save announcements to localStorage:', e);
   }
 }
 

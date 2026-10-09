@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Ticket, TicketStatus, TicketPriority } from '../types';
 import { PriorityBadge, CategoryBadge } from './Badges';
-import { formatTimeAgo } from '../utils/time';
+import { formatTimeAgo, formatExactDateTime } from '../utils/time';
 import {
   Plus,
   MessageSquare,
@@ -140,13 +140,18 @@ export const TicketKanbanView: React.FC<TicketKanbanViewProps> = ({
                         )}
                       </div>
 
-                      {/* Footer: Assignee, Reporter, Comments */}
+                      {/* Footer: Assignee, Created Time, Comments */}
                       <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
                         <div className="flex items-center gap-1">
                           <User className="w-3 h-3 text-slate-400" />
-                          <span className="truncate max-w-[90px]" title={ticket.assignedAgent}>
+                          <span className="truncate max-w-[80px]" title={ticket.assignedAgent}>
                             {ticket.assignedAgent === 'Unassigned' ? 'Unassigned' : ticket.assignedAgent.split(' ')[0]}
                           </span>
+                        </div>
+
+                        <div className="flex items-center gap-1 text-[10px] text-slate-400" title={`Created: ${formatExactDateTime(ticket.createdAt)}`}>
+                          <Clock className="w-3 h-3 text-slate-400" />
+                          <span>{formatTimeAgo(ticket.createdAt)}</span>
                         </div>
 
                         <div className="flex items-center gap-1">

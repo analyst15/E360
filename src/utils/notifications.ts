@@ -89,6 +89,41 @@ export async function sendTicketResolvedNotification(
 }
 
 /**
+ * Dispatches an automated email notification to an employee when their support ticket transitions to In Progress
+ * Recipient: The employee who submitted the ticket (ticket.reporterEmail)
+ */
+export async function sendTicketInProgressNotification(
+  ticket: Ticket,
+  technicianName?: string,
+  notes?: string
+): Promise<NotificationResult | null> {
+  try {
+    const res = await fetch('/api/notifications/ticket-in-progress', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        ticket,
+        technicianName,
+        notes,
+      }),
+    });
+
+    const { ok, data } = await safeParseJson<NotificationResult>(res);
+    if (!ok || !data) {
+      console.warn('Failed to send ticket in-progress email notification:', data);
+      return null;
+    }
+
+    return data;
+  } catch (err) {
+    console.error('Error dispatching ticket in-progress email notification:', err);
+    return null;
+  }
+}
+
+/**
  * Fetch recent notification dispatch logs and Google Workspace SMTP status
  */
 export async function getRecentNotificationLogs() {

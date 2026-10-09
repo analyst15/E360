@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Ticket, TicketPriority, TicketStatus } from '../types';
 import { Filter, ChevronDown, Check, UserCheck, X, Clock, RefreshCw, CheckCircle2, AlertCircle, Trash2 } from 'lucide-react';
 import { IT_AGENTS } from '../data/mockData';
+import { formatExactDate, formatExactTime, formatExactDateTime, formatTimeAgo } from '../utils/time';
 
 interface AdminDashboardViewProps {
   tickets: Ticket[];
@@ -322,6 +323,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   STATUS
                 </th>
                 <th className="py-3 px-6 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                  CREATED
+                </th>
+                <th className="py-3 px-6 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
                   ACTIONS
                 </th>
               </tr>
@@ -366,6 +370,17 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     {/* Status */}
                     <td className="py-4 px-6 whitespace-nowrap">
                       {renderStatusPill(ticket.status)}
+                    </td>
+
+                    {/* Created Time */}
+                    <td className="py-4 px-6 whitespace-nowrap text-xs">
+                      <div className="text-slate-800 font-medium flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                        <span>{formatExactTime(ticket.createdAt)}</span>
+                      </div>
+                      <div className="text-[11px] text-slate-500 mt-0.5" title={`Created: ${formatExactDateTime(ticket.createdAt)}`}>
+                        {formatExactDate(ticket.createdAt)} <span className="text-slate-400">({formatTimeAgo(ticket.createdAt)})</span>
+                      </div>
                     </td>
 
                     {/* Actions */}
@@ -433,7 +448,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
               {filteredTickets.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="py-8 text-center text-xs text-slate-400">
+                  <td colSpan={8} className="py-8 text-center text-xs text-slate-400">
                     No tickets found matching your filter criteria.
                   </td>
                 </tr>

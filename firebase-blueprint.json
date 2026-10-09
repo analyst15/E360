@@ -62,6 +62,21 @@
         "assignedTicketsCount": "number",
         "lastActive": "string"
       }
+    },
+    "announcements": {
+      "description": "Temporary broadcast alerts, system outage notices, and maintenance announcements displayed on the employee portal",
+      "fields": {
+        "id": "string",
+        "title": "string",
+        "message": "string",
+        "severity": "string",
+        "affectedSystem": "string",
+        "isActive": "boolean",
+        "createdAt": "string",
+        "updatedAt": "string",
+        "expectedResolution": "string",
+        "authorName": "string"
+      }
     }
   }
 }

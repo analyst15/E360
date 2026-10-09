@@ -10,6 +10,7 @@ import {
   TicketPriority,
   TicketCategory,
   TicketComment,
+  PortalAnnouncement,
 } from './types';
 import {
   loadTickets,
@@ -20,6 +21,8 @@ import {
   saveAssets,
   loadUsers,
   saveUsers,
+  loadAnnouncements,
+  saveAnnouncements,
   resetToDefaults,
   purgeLocalDemoData,
   exportAllDataAsJSON,
@@ -30,6 +33,7 @@ import {
   subscribeAssets,
   subscribeUsers,
   subscribeKBArticles,
+  subscribeAnnouncements,
   saveTicketToFirestore,
   deleteTicketFromFirestore,
   addCommentToTicketInFirestore,
@@ -39,6 +43,9 @@ import {
   deleteUserFromFirestore,
   saveKBArticleToFirestore,
   deleteKBArticleFromFirestore,
+  saveAnnouncementToFirestore,
+  deleteAnnouncementFromFirestore,
+  toggleAnnouncementActiveInFirestore,
   purgeAllDemoDataFromFirestore,
   deleteAllTicketsFromFirestore,
   seedSampleDataToFirestore,
@@ -60,7 +67,12 @@ import { WorkplacePortalsHub } from './components/WorkplacePortalsHub';
 import { LoginPage } from './components/LoginPage';
 import { ITStaffDashboardView } from './components/ITStaffDashboardView';
 import { EmailDiagnosticsModal } from './components/EmailDiagnosticsModal';
-import { sendTicketCreatedNotification, sendTicketResolvedNotification } from './utils/notifications';
+import { ManageAnnouncementModal } from './components/ManageAnnouncementModal';
+import {
+  sendTicketCreatedNotification,
+  sendTicketResolvedNotification,
+  sendTicketInProgressNotification,
+} from './utils/notifications';
 
 export default function App() {
   const [tickets, setTickets] = useState<Ticket[]>(() => loadTickets());
@@ -109,6 +121,8 @@ export default function App() {
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEmailDiagnostics, setShowEmailDiagnostics] = useState(false);
+  const [announcements, setAnnouncements] = useState<PortalAnnouncement[]>(() => loadAnnouncements());
+  const [showAnnouncementModal, setShowAnnouncementModal] = useState(false);
   const [createPrefill, setCreatePrefill] = useState<{
     category?: TicketCategory;
     title?: string;
@@ -146,12 +160,16 @@ export default function App() {
     const unsubKB = subscribeKBArticles((liveArticles) => {
       setKBArticles(liveArticles);
     });
+    const unsubAnnouncements = subscribeAnnouncements((liveAnnouncements) => {
+      setAnnouncements(liveAnnouncements);
+    });
 
     return () => {
       unsubTickets();
       unsubAssets();
       unsubUsers();
       unsubKB();
+      unsubAnnouncements();
     };
   }, []);
 
@@ -322,9 +340,29 @@ export default function App() {
     const prev = tickets.find(t => t.id === updated.id);
     const wasResolved = prev && (prev.status === 'Resolved' || prev.status === 'Closed');
     const isNowResolved = updated.status === 'Resolved' || updated.status === 'Closed';
+    const wasInProgress = prev && prev.status === 'In Progress';
+    const isNowInProgress = updated.status === 'In Progress';
 
     setTickets(prevList => prevList.map(t => (t.id === updated.id ? updated : t)));
     saveTicketToFirestore(updated);
+
+    // If ticket transitioned to In Progress, send notification email to the employee
+    if (!wasInProgress && isNowInProgress) {
+      const latestComment = updated.comments && updated.comments.length > 0
+        ? updated.comments[updated.comments.length - 1].content
+        : undefined;
+      sendTicketInProgressNotification(
+        updated,
+        currentUser?.name || updated.assignedAgent,
+        latestComment
+      ).then(result => {
+        if (result?.success) {
+          console.log(`In-progress email dispatched to employee (${updated.reporterEmail}) for ticket ${updated.ticketNumber}`);
+        }
+      }).catch(err => {
+        console.error('Failed to send in-progress email notification to employee:', err);
+      });
+    }
 
     // If ticket transitioned to Resolved or Closed, send notification email to the employee
     if (!wasResolved && isNowResolved) {
@@ -363,8 +401,8 @@ export default function App() {
 
     const targetTicket = tickets.find(t => t.id === ticketId);
     if (targetTicket) {
-      const updatedStatus =
-        targetTicket.status === 'Open' && commentData.authorRole === 'Agent' ? 'In Progress' : targetTicket.status;
+      const isTransitioningToInProgress = targetTicket.status === 'Open' && commentData.authorRole === 'Agent';
+      const updatedStatus = isTransitioningToInProgress ? 'In Progress' : targetTicket.status;
       const updated: Ticket = {
         ...targetTicket,
         status: updatedStatus,
@@ -373,6 +411,17 @@ export default function App() {
       };
       setTickets(prev => prev.map(t => (t.id === ticketId ? updated : t)));
       saveTicketToFirestore(updated);
+
+      // If agent comment transitioned ticket from Open to In Progress, notify employee
+      if (isTransitioningToInProgress) {
+        sendTicketInProgressNotification(
+          updated,
+          commentData.authorName || currentUser?.name || updated.assignedAgent,
+          commentData.content
+        ).catch(err => {
+          console.error('Failed to send in-progress notification on agent comment:', err);
+        });
+      }
     }
   };
 
@@ -381,6 +430,8 @@ export default function App() {
     if (target) {
       const wasResolved = target.status === 'Resolved' || target.status === 'Closed';
       const isNowResolved = newStatus === 'Resolved' || newStatus === 'Closed';
+      const wasInProgress = target.status === 'In Progress';
+      const isNowInProgress = newStatus === 'In Progress';
       const nowIso = new Date().toISOString();
 
       const updated: Ticket = {
@@ -391,6 +442,20 @@ export default function App() {
       };
       setTickets(prev => prev.map(t => (t.id === ticketId ? updated : t)));
       saveTicketToFirestore(updated);
+
+      // If ticket transitioned to In Progress, send email notification to employee
+      if (!wasInProgress && isNowInProgress) {
+        sendTicketInProgressNotification(
+          updated,
+          currentUser?.name || updated.assignedAgent
+        ).then(result => {
+          if (result?.success) {
+            console.log(`In-progress email dispatched to employee (${updated.reporterEmail}) for ticket ${updated.ticketNumber}`);
+          }
+        }).catch(err => {
+          console.error('Failed to send in-progress email notification to employee:', err);
+        });
+      }
 
       // If ticket transitioned to Resolved or Closed, send resolution email to employee
       if (!wasResolved && isNowResolved) {
@@ -411,12 +476,14 @@ export default function App() {
 
   const handleBulkUpdateStatus = (ticketIds: string[], newStatus: TicketStatus) => {
     const isNowResolved = newStatus === 'Resolved' || newStatus === 'Closed';
+    const isNowInProgress = newStatus === 'In Progress';
     const nowIso = new Date().toISOString();
 
     setTickets(prev =>
       prev.map(t => {
         if (!ticketIds.includes(t.id)) return t;
         const wasResolved = t.status === 'Resolved' || t.status === 'Closed';
+        const wasInProgress = t.status === 'In Progress';
         const updated: Ticket = {
           ...t,
           status: newStatus,
@@ -424,6 +491,16 @@ export default function App() {
           resolvedAt: isNowResolved && !t.resolvedAt ? nowIso : t.resolvedAt,
         };
         saveTicketToFirestore(updated);
+
+        // Send email to employee if transitioning to In Progress
+        if (!wasInProgress && isNowInProgress) {
+          sendTicketInProgressNotification(
+            updated,
+            currentUser?.name || updated.assignedAgent
+          ).catch(err => {
+            console.error(`Failed to send in-progress email to employee for ${updated.ticketNumber}:`, err);
+          });
+        }
 
         // Send email to employee if transitioning to Resolved
         if (!wasResolved && isNowResolved) {
@@ -561,6 +638,30 @@ export default function App() {
     }
   };
 
+  const handleSaveAnnouncement = async (announcement: PortalAnnouncement) => {
+    try {
+      await saveAnnouncementToFirestore(announcement);
+    } catch (e) {
+      console.error('Failed to save announcement:', e);
+    }
+  };
+
+  const handleDeleteAnnouncement = async (id: string) => {
+    try {
+      await deleteAnnouncementFromFirestore(id);
+    } catch (e) {
+      console.error('Failed to delete announcement:', e);
+    }
+  };
+
+  const handleToggleAnnouncementActive = async (id: string, isActive: boolean) => {
+    try {
+      await toggleAnnouncementActiveInFirestore(id, isActive);
+    } catch (e) {
+      console.error('Failed to toggle announcement:', e);
+    }
+  };
+
   const openTicketsCount = tickets.filter(t => t.status !== 'Resolved' && t.status !== 'Closed').length;
 
   // Unauthenticated Gate: Show Login Screen
@@ -582,11 +683,15 @@ export default function App() {
         assets={assets}
         users={users}
         currentUser={currentUser}
+        announcements={announcements}
         onCreateTicket={handleCreateTicket}
         onAddComment={handleAddComment}
         onUpvoteKBArticle={handleUpvoteKBArticle}
         onSwitchToAdmin={() => switchPortalMode('admin')}
         onLogout={handleLogout}
+        onSaveAnnouncement={handleSaveAnnouncement}
+        onDeleteAnnouncement={handleDeleteAnnouncement}
+        onToggleAnnouncementActive={handleToggleAnnouncementActive}
       />
     );
   }
@@ -598,6 +703,7 @@ export default function App() {
       <Header
         tickets={tickets}
         currentUser={currentUser}
+        announcements={announcements}
         onExportJSON={() => exportAllDataAsJSON(tickets, kbArticles, assets)}
         onExportCSV={() => exportTicketsToCSV(tickets)}
         onResetData={handleResetData}
@@ -609,6 +715,7 @@ export default function App() {
         onToggleMobileSidebar={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
         isMobileSidebarOpen={isMobileSidebarOpen}
         onOpenEmailDiagnostics={() => setShowEmailDiagnostics(true)}
+        onOpenAnnouncements={() => setShowAnnouncementModal(true)}
       />
 
       {/* App Body with Sidebar & Content */}
@@ -634,9 +741,12 @@ export default function App() {
             <ITStaffDashboardView
               tickets={tickets}
               currentUser={currentUser}
+              announcements={announcements}
               onSelectTicket={t => setSelectedTicket(t)}
               onUpdateTicket={handleUpdateTicket}
               onDeleteTicket={handleDeleteTicket}
+              onOpenAnnouncements={() => setShowAnnouncementModal(true)}
+              onToggleAnnouncementActive={handleToggleAnnouncementActive}
               onOpenCreateTicket={() => {
                 setCreatePrefill({});
                 setShowCreateModal(true);
@@ -793,6 +903,18 @@ export default function App() {
         adminEmail="it@elimishawatoto.org"
         userEmail={currentUser?.email || 'techanalyst41@gmail.com'}
       />
+
+      {/* Outage & Broadcast Announcements Modal */}
+      {showAnnouncementModal && (
+        <ManageAnnouncementModal
+          announcements={announcements}
+          currentUser={currentUser}
+          onSaveAnnouncement={handleSaveAnnouncement}
+          onDeleteAnnouncement={handleDeleteAnnouncement}
+          onToggleActive={handleToggleAnnouncementActive}
+          onClose={() => setShowAnnouncementModal(false)}
+        />
+      )}
     </div>
   );
 }

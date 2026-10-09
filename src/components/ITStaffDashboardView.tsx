@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Ticket, TicketPriority, TicketStatus, UserAccount } from '../types';
+import { Ticket, TicketPriority, TicketStatus, UserAccount, PortalAnnouncement } from '../types';
 import {
   AlertCircle,
   Search,
@@ -14,25 +14,33 @@ import {
   UserPlus,
   RefreshCw,
   Trash2,
+  Radio,
 } from 'lucide-react';
 import { IT_AGENTS } from '../data/mockData';
+import { formatExactDate, formatExactTime, formatExactDateTime, formatTimeAgo } from '../utils/time';
 
 interface ITStaffDashboardViewProps {
   tickets: Ticket[];
   currentUser?: UserAccount | null;
+  announcements?: PortalAnnouncement[];
   onSelectTicket: (ticket: Ticket) => void;
   onUpdateTicket: (ticket: Ticket) => void;
   onDeleteTicket?: (ticketId: string) => void;
   onOpenCreateTicket?: () => void;
+  onOpenAnnouncements?: () => void;
+  onToggleAnnouncementActive?: (id: string, isActive: boolean) => void;
 }
 
 export const ITStaffDashboardView: React.FC<ITStaffDashboardViewProps> = ({
   tickets,
   currentUser,
+  announcements = [],
   onSelectTicket,
   onUpdateTicket,
   onDeleteTicket,
   onOpenCreateTicket,
+  onOpenAnnouncements,
+  onToggleAnnouncementActive,
 }) => {
   const [filterMode, setFilterMode] = useState<'all' | 'assigned_to_me' | 'unassigned' | 'high_priority'>('all');
   const [searchTerm, setSearchTerm] = useState('');
@@ -303,13 +311,82 @@ export const ITStaffDashboardView: React.FC<ITStaffDashboardViewProps> = ({
           </p>
         </div>
 
-        {currentUser && (
-          <div className="inline-flex items-center gap-2.5 px-4 py-2 rounded-xl bg-blue-50 border border-blue-200 text-blue-900 text-sm font-normal self-start sm:self-auto shadow-2xs">
-            <span className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-pulse"></span>
-            <span>Technician Queue: <span className="font-normal">{currentUser.name}</span> ({currentUser.role})</span>
-          </div>
-        )}
+        <div className="flex items-center gap-2.5 self-start sm:self-auto flex-wrap">
+          {onOpenAnnouncements && (
+            <button
+              onClick={onOpenAnnouncements}
+              className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer shadow-2xs border ${
+                announcements.some((a) => a.isActive)
+                  ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-300'
+                  : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+              }`}
+              title="Issue temporary broadcast alerts or outage notifications to employee portal"
+            >
+              <Radio className={`w-4 h-4 ${announcements.some((a) => a.isActive) ? 'text-rose-600 animate-pulse' : 'text-slate-500'}`} />
+              <span>{announcements.some((a) => a.isActive) ? 'Active Outage Broadcast' : 'Broadcast Announcement'}</span>
+              {announcements.some((a) => a.isActive) && (
+                <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
+              )}
+            </button>
+          )}
+
+          {currentUser && (
+            <div className="inline-flex items-center gap-2.5 px-4 py-2 rounded-xl bg-blue-50 border border-blue-200 text-blue-900 text-sm font-normal shadow-2xs">
+              <span className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-pulse"></span>
+              <span className="hidden md:inline">Technician Queue: </span><span className="font-normal">{currentUser.name}</span>
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* Active Broadcast Announcement Strip for IT Staff */}
+      {announcements.some((a) => a.isActive) && (
+        <div className="p-4 rounded-2xl bg-gradient-to-r from-rose-50 via-red-50 to-orange-50 border border-rose-200/90 text-rose-950 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-start sm:items-center gap-3">
+            <span className="w-9 h-9 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
+              <Radio className="w-4.5 h-4.5 animate-pulse" />
+            </span>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[10px] uppercase font-extrabold tracking-wider px-2 py-0.5 rounded-full bg-rose-600 text-white">
+                  Live on Employee Portal
+                </span>
+                <span className="text-xs sm:text-sm font-bold text-slate-900">
+                  {announcements.find((a) => a.isActive)?.title}
+                </span>
+                {announcements.find((a) => a.isActive)?.affectedSystem && (
+                  <span className="text-[11px] font-semibold text-rose-700 bg-rose-100/90 border border-rose-200 px-2 py-0.5 rounded-md">
+                    Affected: {announcements.find((a) => a.isActive)?.affectedSystem}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-600 line-clamp-1 mt-0.5">
+                {announcements.find((a) => a.isActive)?.message}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 self-end md:self-center shrink-0">
+            {onToggleAnnouncementActive && announcements.find((a) => a.isActive) && (
+              <button
+                onClick={() => onToggleAnnouncementActive(announcements.find((a) => a.isActive)!.id, false)}
+                className="px-3 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl transition-colors cursor-pointer"
+                title="Deactivate this announcement when incident is resolved"
+              >
+                Mark Resolved & Turn Off
+              </button>
+            )}
+            {onOpenAnnouncements && (
+              <button
+                onClick={onOpenAnnouncements}
+                className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl transition-colors cursor-pointer shadow-2xs"
+              >
+                Manage Alert
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* 4 Metric Cards with Rich, Distinct Background Colors */}
       <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
@@ -573,8 +650,14 @@ export const ITStaffDashboardView: React.FC<ITStaffDashboardViewProps> = ({
                             {ticket.title}
                           </span>
                         </div>
-                        <div className="text-xs sm:text-sm text-slate-500 mt-1 pl-0.5 truncate font-normal">
-                          Submitted by {ticket.reporterName}
+                        <div className="text-xs sm:text-sm text-slate-500 mt-1 pl-0.5 flex items-center gap-2 flex-wrap font-normal">
+                          <span>Submitted by <strong className="text-slate-700 font-medium">{ticket.reporterName}</strong></span>
+                          <span className="text-slate-300">•</span>
+                          <span className="inline-flex items-center gap-1 text-slate-500 text-xs" title={`Created: ${formatExactDateTime(ticket.createdAt)}`}>
+                            <Clock className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                            <span>Created {formatExactDate(ticket.createdAt)} at {formatExactTime(ticket.createdAt)}</span>
+                            <span className="text-slate-400">({formatTimeAgo(ticket.createdAt)})</span>
+                          </span>
                         </div>
                       </td>
 
