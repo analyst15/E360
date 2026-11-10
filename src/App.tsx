@@ -68,6 +68,7 @@ import { LoginPage } from './components/LoginPage';
 import { ITStaffDashboardView } from './components/ITStaffDashboardView';
 import { EmailDiagnosticsModal } from './components/EmailDiagnosticsModal';
 import { ManageAnnouncementModal } from './components/ManageAnnouncementModal';
+import { PortalAnnouncementBanner } from './components/PortalAnnouncementBanner';
 import {
   sendTicketCreatedNotification,
   sendTicketResolvedNotification,
@@ -639,26 +640,54 @@ export default function App() {
   };
 
   const handleSaveAnnouncement = async (announcement: PortalAnnouncement) => {
+    // 1. Immediately update local state & localStorage so the banner appears on the portals instantly
+    setAnnouncements(prev => {
+      const idx = prev.findIndex(a => a.id === announcement.id);
+      let next: PortalAnnouncement[];
+      if (idx >= 0) {
+        next = prev.map(a => a.id === announcement.id ? announcement : a);
+      } else {
+        next = [announcement, ...prev];
+      }
+      next.sort((a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime());
+      saveAnnouncements(next);
+      return next;
+    });
+
+    // 2. Persist to Firestore for real-time synchronization across devices
     try {
       await saveAnnouncementToFirestore(announcement);
     } catch (e) {
-      console.error('Failed to save announcement:', e);
+      console.error('Failed to save announcement to Firestore:', e);
     }
   };
 
   const handleDeleteAnnouncement = async (id: string) => {
+    setAnnouncements(prev => {
+      const next = prev.filter(a => a.id !== id);
+      saveAnnouncements(next);
+      return next;
+    });
     try {
       await deleteAnnouncementFromFirestore(id);
     } catch (e) {
-      console.error('Failed to delete announcement:', e);
+      console.error('Failed to delete announcement from Firestore:', e);
     }
   };
 
   const handleToggleAnnouncementActive = async (id: string, isActive: boolean) => {
+    setAnnouncements(prev => {
+      const next = prev.map(a =>
+        a.id === id ? { ...a, isActive, updatedAt: new Date().toISOString() } : a
+      );
+      next.sort((a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime());
+      saveAnnouncements(next);
+      return next;
+    });
     try {
       await toggleAnnouncementActiveInFirestore(id, isActive);
     } catch (e) {
-      console.error('Failed to toggle announcement:', e);
+      console.error('Failed to toggle announcement in Firestore:', e);
     }
   };
 
@@ -716,6 +745,14 @@ export default function App() {
         isMobileSidebarOpen={isMobileSidebarOpen}
         onOpenEmailDiagnostics={() => setShowEmailDiagnostics(true)}
         onOpenAnnouncements={() => setShowAnnouncementModal(true)}
+      />
+
+      {/* Global Outage and System Announcement Banner for All Portals */}
+      <PortalAnnouncementBanner
+        announcements={announcements}
+        currentUser={currentUser}
+        onManageAnnouncement={() => setShowAnnouncementModal(true)}
+        onToggleActive={handleToggleAnnouncementActive}
       />
 
       {/* App Body with Sidebar & Content */}

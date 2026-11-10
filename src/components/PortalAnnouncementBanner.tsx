@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   AlertTriangle,
   AlertCircle,
@@ -29,8 +29,14 @@ export const PortalAnnouncementBanner: React.FC<PortalAnnouncementBannerProps> =
   onManageAnnouncement,
   onToggleActive,
 }) => {
-  // Find currently active announcements
-  const activeAnnouncements = announcements.filter((a) => a.isActive);
+  // Find currently active announcements, sorted newest updated first
+  const activeAnnouncements = useMemo(() => {
+    return [...announcements]
+      .filter((a) => a.isActive)
+      .sort((a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime());
+  }, [announcements]);
+
+  const [activeIndex, setActiveIndex] = useState(0);
 
   // Track dismissed state per announcement ID + update timestamp
   const [dismissedMap, setDismissedMap] = useState<Record<string, boolean>>(() => {
@@ -46,12 +52,27 @@ export const PortalAnnouncementBanner: React.FC<PortalAnnouncementBannerProps> =
     return map;
   });
 
+  // Re-sync dismissed map and reset to latest alert whenever announcements change
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const map: Record<string, boolean> = {};
+      announcements.forEach((a) => {
+        const key = `ewf_dismissed_announcement_${a.id}_${a.updatedAt || a.createdAt}`;
+        if (localStorage.getItem(key) === 'true') {
+          map[a.id] = true;
+        }
+      });
+      setDismissedMap(map);
+    }
+    setActiveIndex(0);
+  }, [announcements]);
+
   const [isManuallyExpanded, setIsManuallyExpanded] = useState(false);
 
   const isStaffOrAdmin = currentUser?.role === 'Admin' || currentUser?.role === 'IT Staff';
 
-  // Primary active announcement to display
-  const currentAnnouncement = activeAnnouncements[0] || null;
+  // Primary active announcement to display (newest first, or activeIndex)
+  const currentAnnouncement = activeAnnouncements[activeIndex] || activeAnnouncements[0] || null;
 
   if (!currentAnnouncement) {
     return null;
@@ -188,6 +209,28 @@ export const PortalAnnouncementBanner: React.FC<PortalAnnouncementBannerProps> =
                 {currentAnnouncement.affectedSystem && (
                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-white/15 text-white border border-white/25">
                     Affected System: <strong className="font-bold underline decoration-white/40">{currentAnnouncement.affectedSystem}</strong>
+                  </span>
+                )}
+
+                {activeAnnouncements.length > 1 && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-black/20 text-white border border-white/25">
+                    <button
+                      type="button"
+                      onClick={() => setActiveIndex((prev) => (prev > 0 ? prev - 1 : activeAnnouncements.length - 1))}
+                      className="hover:text-amber-200 cursor-pointer px-1"
+                      title="Previous alert notice"
+                    >
+                      ◀
+                    </button>
+                    <span>Notice {activeIndex + 1} of {activeAnnouncements.length}</span>
+                    <button
+                      type="button"
+                      onClick={() => setActiveIndex((prev) => (prev < activeAnnouncements.length - 1 ? prev + 1 : 0))}
+                      className="hover:text-amber-200 cursor-pointer px-1"
+                      title="Next alert notice"
+                    >
+                      ▶
+                    </button>
                   </span>
                 )}
 

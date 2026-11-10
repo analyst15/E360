@@ -65,7 +65,7 @@ export const ManageAnnouncementModal: React.FC<ManageAnnouncementModalProps> = (
 
   // Email Notification State
   const [sendEmailAlert, setSendEmailAlert] = useState<boolean>(true);
-  const [emailTargetMode, setEmailTargetMode] = useState<'all' | 'selected'>('all');
+  const [emailTargetMode, setEmailTargetMode] = useState<'all' | 'selected'>('selected');
   const [selectedEmails, setSelectedEmails] = useState<string[]>([]);
   const [staffSearchTerm, setStaffSearchTerm] = useState('');
   const [selectedDeptFilter, setSelectedDeptFilter] = useState<string>('All');
@@ -136,7 +136,7 @@ export const ManageAnnouncementModal: React.FC<ManageAnnouncementModalProps> = (
       setExpectedResolution('');
       setIsActive(true);
       setSendEmailAlert(true);
-      setEmailTargetMode('all');
+      setEmailTargetMode('selected');
       setSelectedEmails([]);
       setCustomEmails([]);
     } else {
@@ -314,24 +314,27 @@ export const ManageAnnouncementModal: React.FC<ManageAnnouncementModalProps> = (
         }
       }
 
-      // 3. User feedback message
+      // 3. User feedback message and auto-close modal
       if (isActive) {
         if (sendEmailAlert && emailDispatchedCount > 0) {
           setSaveSuccessMessage(
-            `Alert broadcast to Employee Portal and sent to ${emailDispatchedCount} staff ${
-              emailDispatchedCount === 1 ? 'inbox' : 'inboxes'
-            } (${emailTargetMode === 'all' ? 'All Staff' : 'Selected Staff'})!${
+            `Alert created live on all portals and emailed to ${emailDispatchedCount} ${
+              emailTargetMode === 'selected' ? 'selected' : 'all'
+            } staff ${emailDispatchedCount === 1 ? 'inbox' : 'inboxes'}!${
               emailWarning ? ` [${emailWarning}]` : ''
             }`
           );
         } else {
-          setSaveSuccessMessage('Alert successfully broadcast to Employee Portal banner.');
+          setSaveSuccessMessage('Alert created and broadcast live across all portals!');
         }
       } else {
-        setSaveSuccessMessage('Announcement saved and set to Inactive (hidden from employees).');
+        setSaveSuccessMessage('Announcement saved and set to Inactive (hidden from portals).');
       }
 
-      setTimeout(() => setSaveSuccessMessage(null), 4500);
+      // Auto-close modal after brief delay so the user immediately sees the active banner on the portal
+      setTimeout(() => {
+        onClose();
+      }, 1100);
     } catch (err) {
       console.error('Failed to save announcement or dispatch emails:', err);
       setEmailErrorMessage('An error occurred while saving the alert. Please verify connection.');
@@ -515,10 +518,10 @@ export const ManageAnnouncementModal: React.FC<ManageAnnouncementModalProps> = (
               <div>
                 <span className="text-xs font-bold text-slate-900 block flex items-center gap-1.5">
                   <Radio className={`w-3.5 h-3.5 ${isActive ? 'text-emerald-600' : 'text-slate-400'}`} />
-                  Broadcast Live to Employee Portal
+                  Broadcast Live on Portals (Employee Portal & Admin Console)
                 </span>
                 <span className="text-[11px] text-slate-500 block">
-                  When active, this banner is displayed at the top of the portal for all staff.
+                  When enabled, this alert banner is published across all portals for all staff.
                 </span>
               </div>
               <label className="relative inline-flex items-center cursor-pointer">
@@ -956,8 +959,10 @@ export const ManageAnnouncementModal: React.FC<ManageAnnouncementModalProps> = (
                   <span>
                     {isActive
                       ? sendEmailAlert && effectiveRecipients.length > 0
-                        ? `Broadcast & Email (${effectiveRecipients.length})`
-                        : 'Broadcast Alert'
+                        ? `Broadcast to Portals & Email (${effectiveRecipients.length} ${
+                            emailTargetMode === 'selected' ? 'Selected' : 'Staff'
+                          })`
+                        : 'Broadcast to Portals'
                       : 'Save as Inactive'}
                   </span>
                 </>
