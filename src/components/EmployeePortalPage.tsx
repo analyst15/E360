@@ -2260,6 +2260,7 @@ export const EmployeePortalPage: React.FC<EmployeePortalPageProps> = ({
         <ManageAnnouncementModal
           announcements={announcements}
           currentUser={currentUser}
+          users={users}
           onSaveAnnouncement={(announcement) => {
             if (onSaveAnnouncement) {
               return onSaveAnnouncement(announcement);

@@ -1139,6 +1139,234 @@ Elimisha Watoto Foundation IT Helpdesk`;
   }
 });
 
+// Broadcast Alert Email Notification Endpoint (Broadcast to Staff Emails - All or Selected)
+apiRouter.post("/notifications/broadcast-alert", async (req, res) => {
+  try {
+    const { announcement, recipients = [], broadcastMode = 'all', senderName } = req.body;
+
+    if (!announcement || !announcement.title || !announcement.message) {
+      return res.status(400).json({ error: "Invalid announcement payload" });
+    }
+
+    // Clean and deduplicate recipient emails
+    const rawList = Array.isArray(recipients) ? recipients : [];
+    const validRecipients = Array.from(
+      new Set(
+        rawList
+          .map((r: any) => (typeof r === 'string' ? r.trim().toLowerCase() : ''))
+          .filter((r: string) => r && r.includes('@'))
+      )
+    );
+
+    if (validRecipients.length === 0) {
+      return res.status(400).json({ error: "No valid staff email recipients provided" });
+    }
+
+    const severity = (announcement.severity || 'outage').toLowerCase();
+    let prefixTag = '[IT BROADCAST]';
+    let bannerColor = '#0284c7'; // default blue
+    let badgeBg = '#e0f2fe';
+    let badgeText = '#0369a1';
+    let severityLabel = 'Informational Notice';
+
+    if (severity === 'outage') {
+      prefixTag = '[URGENT IT ALERT - SYSTEM OUTAGE]';
+      bannerColor = '#dc2626';
+      badgeBg = '#fee2e2';
+      badgeText = '#b91c1c';
+      severityLabel = 'Critical Outage (System Down)';
+    } else if (severity === 'maintenance') {
+      prefixTag = '[IT NOTICE - SCHEDULED MAINTENANCE]';
+      bannerColor = '#ea580c';
+      badgeBg = '#ffedd5';
+      badgeText = '#c2410c';
+      severityLabel = 'Scheduled Maintenance';
+    } else if (severity === 'warning') {
+      prefixTag = '[IT ADVISORY - SERVICE DEGRADATION]';
+      bannerColor = '#d97706';
+      badgeBg = '#fef3c7';
+      badgeText = '#b45309';
+      severityLabel = 'Service Degradation / Advisory';
+    }
+
+    const subject = `${prefixTag} ${announcement.title}`;
+    const itWorkspaceUrl = (process.env.IT_WORKSPACE_URL || "https://it.elimishawatoto.org").trim();
+    const formattedDate = new Date().toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "numeric",
+      hour12: true,
+    });
+
+    const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; background-color: #f8fafc; color: #1e293b; }
+    .container { max-width: 600px; margin: 24px auto; background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
+    .header { background: ${bannerColor}; padding: 24px; color: #ffffff; }
+    .header-tag { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: rgba(255, 255, 255, 0.9); font-weight: 700; margin-bottom: 6px; }
+    .header-title { font-size: 20px; font-weight: 700; margin: 0; color: #ffffff; line-height: 1.3; }
+    .content { padding: 24px; }
+    .badge { display: inline-block; padding: 5px 12px; border-radius: 9999px; font-size: 12px; font-weight: 700; background: ${badgeBg}; color: ${badgeText}; }
+    .section-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin: 16px 0; }
+    .label { font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; margin-bottom: 2px; }
+    .value { font-size: 14px; font-weight: 600; color: #0f172a; }
+    .desc-box { background: #ffffff; border-left: 4px solid ${bannerColor}; padding: 14px 16px; margin-top: 12px; border-radius: 4px; font-size: 14px; line-height: 1.6; color: #334155; }
+    .btn { display: inline-block; background: ${bannerColor}; color: #ffffff; padding: 12px 24px; border-radius: 10px; text-decoration: none; font-weight: 600; font-size: 14px; margin-top: 16px; }
+    .footer { background: #f1f5f9; padding: 16px 24px; font-size: 12px; color: #64748b; border-top: 1px solid #e2e8f0; text-align: center; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="header-tag">Elimisha Watoto Foundation • IT Operations Alert</div>
+      <h1 class="header-title">${announcement.title}</h1>
+    </div>
+    <div class="content">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+        <span class="badge">${severityLabel}</span>
+        <span style="font-size: 12px; color: #64748b; font-weight: 500;">Dispatched: ${formattedDate}</span>
+      </div>
+
+      <div class="section-box">
+        <table style="width: 100%; border-collapse: collapse;">
+          <tr>
+            <td style="padding: 6px 0; width: 50%;">
+              <div class="label">Affected System / Service</div>
+              <div class="value">${announcement.affectedSystem || 'General Organization Portals'}</div>
+            </td>
+            <td style="padding: 6px 0; width: 50%;">
+              <div class="label">Current Status</div>
+              <div class="value">${announcement.isActive !== false ? 'Active Live Alert' : 'Archived / Updated Notice'}</div>
+            </td>
+          </tr>
+          ${announcement.expectedResolution ? `
+          <tr>
+            <td colspan="2" style="padding: 6px 0;">
+              <div class="label">Estimated Resolution / Status</div>
+              <div class="value" style="color: ${bannerColor}; font-weight: 600;">${announcement.expectedResolution}</div>
+            </td>
+          </tr>
+          ` : ''}
+          <tr>
+            <td style="padding: 6px 0;">
+              <div class="label">Dispatched By</div>
+              <div class="value">${announcement.authorName || senderName || 'IT Administration'}</div>
+            </td>
+            <td style="padding: 6px 0;">
+              <div class="label">Recipients</div>
+              <div class="value">${broadcastMode === 'all' ? `All Staff (${validRecipients.length} recipients)` : `${validRecipients.length} Selected Staff`}</div>
+            </td>
+          </tr>
+        </table>
+
+        <div style="margin-top: 14px;">
+          <div class="label">Announcement & Instructions for Staff</div>
+          <div class="desc-box">${(announcement.message || '').replace(/\n/g, '<br/>')}</div>
+        </div>
+      </div>
+
+      <div style="text-align: center; margin-top: 20px;">
+        <a href="${itWorkspaceUrl}" class="btn" style="color: #ffffff;">Open Employee Support Portal</a>
+      </div>
+    </div>
+    <div class="footer">
+      This is an official administrative broadcast sent to Elimisha Watoto Foundation staff.<br/>
+      If you need IT assistance, please submit a ticket via the IT Helpdesk Portal or contact <strong>it@elimishawatoto.org</strong>.
+    </div>
+  </div>
+</body>
+</html>`;
+
+    const textFallback = `[${prefixTag}] ${announcement.title}
+Status: ${severityLabel}
+Affected System: ${announcement.affectedSystem || 'General Systems'}
+Estimated Resolution: ${announcement.expectedResolution || 'See portal for updates'}
+Issued By: ${announcement.authorName || senderName || 'IT Administration'}
+
+Message:
+${announcement.message}
+
+Access Employee Portal: ${itWorkspaceUrl}
+Elimisha Watoto Foundation IT Support Desk`;
+
+    let sendStatus: 'sent' | 'simulated' = 'simulated';
+    let messageId: string | undefined = undefined;
+    let smtpError: string | undefined = undefined;
+    let portUsed: number | undefined = undefined;
+
+    const smtpConfig = getSmtpConfig();
+
+    if (smtpConfig.configured) {
+      try {
+        const mailOptions: any = {
+          subject,
+          text: textFallback,
+          html: htmlContent,
+        };
+
+        if (validRecipients.length === 1) {
+          mailOptions.to = validRecipients[0];
+        } else {
+          // Bulk / Broadcast: put recipients in BCC to maintain confidentiality and clean headers
+          mailOptions.to = `Elimisha Watoto Staff <${smtpConfig.user || 'it@elimishawatoto.org'}>`;
+          mailOptions.bcc = validRecipients;
+        }
+
+        const dispatchResult = await dispatchMailWithFallback(mailOptions, smtpConfig);
+
+        sendStatus = 'sent';
+        messageId = dispatchResult.messageId;
+        portUsed = dispatchResult.portUsed;
+        console.log(`[BROADCAST EMAIL SENT] Alert "${announcement.title}" dispatched to ${validRecipients.length} staff emails (${broadcastMode}) via Port ${portUsed} | ID: ${messageId}`);
+      } catch (err: any) {
+        smtpError = err?.message || String(err);
+        console.error(`[SMTP ERROR] Failed to dispatch broadcast alert email:`, smtpError);
+        sendStatus = 'simulated';
+      }
+    } else {
+      console.log(`[SMTP SIMULATED] Alert "${announcement.title}" simulated to ${validRecipients.length} recipients`);
+    }
+
+    const logEntry = {
+      id: `notif-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      ticketNumber: `ALERT-${(announcement.affectedSystem || 'IT').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) || 'BROADCAST'}`,
+      recipients: validRecipients,
+      subject,
+      timestamp: new Date().toISOString(),
+      status: sendStatus,
+      error: smtpError,
+      preview: `[BROADCAST ${severity.toUpperCase()}] "${announcement.title}" sent to ${validRecipients.length} staff emails (${broadcastMode === 'all' ? 'All Staff' : 'Selected Staff'})${portUsed ? ` via Port ${portUsed}` : ''}`,
+    };
+    emailNotificationLogs.unshift(logEntry);
+    if (emailNotificationLogs.length > 50) emailNotificationLogs.pop();
+
+    return res.json({
+      success: sendStatus === 'sent',
+      message: sendStatus === 'sent'
+        ? `Broadcast alert email successfully sent to ${validRecipients.length} staff members.`
+        : `Broadcast alert email logged (Delivery could not complete live: ${smtpError || 'Simulated mode'}).`,
+      warning: sendStatus !== 'sent' ? (smtpError || 'Email could not be delivered live.') : undefined,
+      recipients: validRecipients,
+      recipientCount: validRecipients.length,
+      broadcastMode,
+      status: sendStatus,
+      port: portUsed,
+      messageId,
+      error: smtpError,
+      dispatchedAt: logEntry.timestamp,
+    });
+  } catch (err: any) {
+    console.error("Broadcast alert email error:", err);
+    return res.status(500).json({ error: err.message || "Failed to dispatch broadcast alert email" });
+  }
+});
+
 // Get recent notification dispatch log and SMTP status
 apiRouter.get("/notifications/recent", (_req, res) => {
   const smtpConfig = getSmtpConfig();

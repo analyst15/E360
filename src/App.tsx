@@ -909,6 +909,7 @@ export default function App() {
         <ManageAnnouncementModal
           announcements={announcements}
           currentUser={currentUser}
+          users={users}
           onSaveAnnouncement={handleSaveAnnouncement}
           onDeleteAnnouncement={handleDeleteAnnouncement}
           onToggleActive={handleToggleAnnouncementActive}

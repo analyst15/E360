@@ -1,4 +1,4 @@
-import { Ticket } from '../types';
+import { Ticket, PortalAnnouncement } from '../types';
 
 export interface NotificationResult {
   success: boolean;
@@ -7,6 +7,20 @@ export interface NotificationResult {
   ticketNumber: string;
   status: 'sent' | 'simulated';
   messageId?: string;
+  dispatchedAt: string;
+}
+
+export interface BroadcastAlertResult {
+  success: boolean;
+  message: string;
+  warning?: string;
+  recipients: string[];
+  recipientCount: number;
+  broadcastMode: 'all' | 'selected';
+  status: 'sent' | 'simulated';
+  port?: number;
+  messageId?: string;
+  error?: string;
   dispatchedAt: string;
 }
 
@@ -204,6 +218,43 @@ export async function updateSmtpConfig(config: { smtpUser: string; smtpPass: str
     return data || { success: false, error: 'Invalid response from server' };
   } catch (err: any) {
     return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Dispatches an official administrative broadcast alert via email to staff members.
+ * Supports broadcasting to all staff or a custom selected subset of staff emails.
+ */
+export async function sendBroadcastAlertNotification(params: {
+  announcement: PortalAnnouncement;
+  recipients: string[];
+  broadcastMode: 'all' | 'selected';
+  senderName?: string;
+}): Promise<BroadcastAlertResult | null> {
+  try {
+    const res = await fetch('/api/notifications/broadcast-alert', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        announcement: params.announcement,
+        recipients: params.recipients,
+        broadcastMode: params.broadcastMode,
+        senderName: params.senderName,
+      }),
+    });
+
+    const { ok, data } = await safeParseJson<BroadcastAlertResult>(res);
+    if (!ok || !data) {
+      console.warn('Failed to send broadcast alert email:', data);
+      return null;
+    }
+
+    return data;
+  } catch (err) {
+    console.error('Error dispatching broadcast alert email:', err);
+    return null;
   }
 }
 
