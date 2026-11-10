@@ -73,6 +73,7 @@ import {
   sendTicketCreatedNotification,
   sendTicketResolvedNotification,
   sendTicketInProgressNotification,
+  sendBroadcastResolvedNotification,
 } from './utils/notifications';
 
 export default function App() {
@@ -640,6 +641,10 @@ export default function App() {
   };
 
   const handleSaveAnnouncement = async (announcement: PortalAnnouncement) => {
+    const existing = announcements.find(a => a.id === announcement.id);
+    const wasActive = existing ? existing.isActive : false;
+    const isNowResolved = wasActive && !announcement.isActive;
+
     // 1. Immediately update local state & localStorage so the banner appears on the portals instantly
     setAnnouncements(prev => {
       const idx = prev.findIndex(a => a.id === announcement.id);
@@ -660,6 +665,22 @@ export default function App() {
     } catch (e) {
       console.error('Failed to save announcement to Firestore:', e);
     }
+
+    // 3. If marking as resolved & turning off, send resolution email to selected emails that received the alert
+    const recipients = announcement.targetRecipients && announcement.targetRecipients.length > 0
+      ? announcement.targetRecipients
+      : (existing?.targetRecipients && existing.targetRecipients.length > 0 ? existing.targetRecipients : []);
+
+    if (isNowResolved && recipients.length > 0) {
+      sendBroadcastResolvedNotification({
+        announcement,
+        recipients,
+        resolvedBy: currentUser?.name || announcement.authorName || 'IT Administration',
+        resolutionNotes: announcement.resolutionNotes || announcement.expectedResolution || 'The reported service interruption has been resolved and all services are fully restored.',
+      }).catch(err => {
+        console.error('Failed to send resolution email:', err);
+      });
+    }
   };
 
   const handleDeleteAnnouncement = async (id: string) => {
@@ -675,19 +696,54 @@ export default function App() {
     }
   };
 
-  const handleToggleAnnouncementActive = async (id: string, isActive: boolean) => {
+  const handleToggleAnnouncementActive = async (id: string, isActive: boolean, customNotes?: string) => {
+    const target = announcements.find(a => a.id === id);
+    const nowIso = new Date().toISOString();
+    const updated: PortalAnnouncement | undefined = target
+      ? {
+          ...target,
+          isActive,
+          updatedAt: nowIso,
+          resolvedAt: !isActive ? nowIso : target.resolvedAt,
+          resolutionNotes: !isActive
+            ? (customNotes || target.resolutionNotes || 'All services and portals have been restored to normal operations.')
+            : target.resolutionNotes,
+        }
+      : undefined;
+
     setAnnouncements(prev => {
       const next = prev.map(a =>
-        a.id === id ? { ...a, isActive, updatedAt: new Date().toISOString() } : a
+        a.id === id ? (updated || { ...a, isActive, updatedAt: nowIso }) : a
       );
       next.sort((a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime());
       saveAnnouncements(next);
       return next;
     });
+
     try {
-      await toggleAnnouncementActiveInFirestore(id, isActive);
+      if (updated) {
+        await saveAnnouncementToFirestore(updated);
+      } else {
+        await toggleAnnouncementActiveInFirestore(id, isActive);
+      }
     } catch (e) {
       console.error('Failed to toggle announcement in Firestore:', e);
+    }
+
+    // If marking as resolved & turning off, dispatch resolution email to the selected emails that received the alert
+    const recipients = target?.targetRecipients && target.targetRecipients.length > 0
+      ? target.targetRecipients
+      : [];
+
+    if (!isActive && recipients.length > 0 && target) {
+      sendBroadcastResolvedNotification({
+        announcement: updated || target,
+        recipients,
+        resolvedBy: currentUser?.name || 'IT Administration',
+        resolutionNotes: customNotes || target.resolutionNotes || 'The reported service interruption has been remediated and all systems are fully restored to normal operations.',
+      }).catch(err => {
+        console.error('Failed to send resolution email on deactivation:', err);
+      });
     }
   };
 
@@ -745,14 +801,6 @@ export default function App() {
         isMobileSidebarOpen={isMobileSidebarOpen}
         onOpenEmailDiagnostics={() => setShowEmailDiagnostics(true)}
         onOpenAnnouncements={() => setShowAnnouncementModal(true)}
-      />
-
-      {/* Global Outage and System Announcement Banner for All Portals */}
-      <PortalAnnouncementBanner
-        announcements={announcements}
-        currentUser={currentUser}
-        onManageAnnouncement={() => setShowAnnouncementModal(true)}
-        onToggleActive={handleToggleAnnouncementActive}
       />
 
       {/* App Body with Sidebar & Content */}

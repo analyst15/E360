@@ -147,6 +147,10 @@ export const ManageAnnouncementModal: React.FC<ManageAnnouncementModalProps> = (
       setAffectedSystem(item.affectedSystem || '');
       setExpectedResolution(item.expectedResolution || '');
       setIsActive(item.isActive);
+      if (item.targetRecipients && item.targetRecipients.length > 0) {
+        setSelectedEmails(item.targetRecipients);
+        setEmailTargetMode(item.broadcastMode || 'selected');
+      }
     }
   };
 
@@ -288,6 +292,10 @@ export const ManageAnnouncementModal: React.FC<ManageAnnouncementModalProps> = (
         createdAt: existing?.createdAt || now,
         updatedAt: now,
         authorName: currentUser?.name || 'IT Operations',
+        targetRecipients: sendEmailAlert && effectiveRecipients.length > 0
+          ? effectiveRecipients
+          : (existing?.targetRecipients || []),
+        broadcastMode: emailTargetMode,
       };
 
       // 1. Save announcement in database / state

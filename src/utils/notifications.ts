@@ -258,3 +258,40 @@ export async function sendBroadcastAlertNotification(params: {
   }
 }
 
+/**
+ * Dispatches an official resolution notice to the exact selected staff emails
+ * that received the original outage or maintenance broadcast alert.
+ */
+export async function sendBroadcastResolvedNotification(params: {
+  announcement: PortalAnnouncement;
+  recipients: string[];
+  resolvedBy?: string;
+  resolutionNotes?: string;
+}): Promise<BroadcastAlertResult | null> {
+  try {
+    const res = await fetch('/api/notifications/broadcast-resolved', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        announcement: params.announcement,
+        recipients: params.recipients,
+        resolvedBy: params.resolvedBy,
+        resolutionNotes: params.resolutionNotes,
+      }),
+    });
+
+    const { ok, data } = await safeParseJson<BroadcastAlertResult>(res);
+    if (!ok || !data) {
+      console.warn('Failed to send broadcast resolution email:', data);
+      return null;
+    }
+
+    return data;
+  } catch (err) {
+    console.error('Error dispatching broadcast resolution email:', err);
+    return null;
+  }
+}
+

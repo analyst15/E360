@@ -1367,6 +1367,212 @@ Elimisha Watoto Foundation IT Support Desk`;
   }
 });
 
+// Broadcast Resolution Email Notification Endpoint (Sent to selected staff who received the original alert)
+apiRouter.post("/notifications/broadcast-resolved", async (req, res) => {
+  try {
+    const { announcement, recipients = [], resolutionNotes, resolvedBy } = req.body;
+
+    if (!announcement || !announcement.title) {
+      return res.status(400).json({ error: "Invalid announcement payload" });
+    }
+
+    const rawList = Array.isArray(recipients) ? recipients : [];
+    const validRecipients = Array.from(
+      new Set(
+        rawList
+          .map((r: any) => (typeof r === 'string' ? r.trim().toLowerCase() : ''))
+          .filter((r: string) => r && r.includes('@'))
+      )
+    );
+
+    if (validRecipients.length === 0) {
+      return res.status(400).json({ error: "No valid staff email recipients provided for resolution" });
+    }
+
+    const subject = `[RESOLVED - SERVICE RESTORED] ${announcement.title}`;
+    const itWorkspaceUrl = (process.env.IT_WORKSPACE_URL || "https://it.elimishawatoto.org").trim();
+    const formattedDate = new Date().toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "numeric",
+      hour12: true,
+    });
+
+    const resolutionText = resolutionNotes?.trim() ||
+      "The service interruption or maintenance affecting this system has been successfully resolved. All online services, grading portals, and network connectivity are fully operational.";
+
+    const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; background-color: #f8fafc; color: #1e293b; }
+    .container { max-width: 600px; margin: 24px auto; background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
+    .header { background: #059669; padding: 24px; color: #ffffff; }
+    .header-tag { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #d1fae5; font-weight: 700; margin-bottom: 6px; }
+    .header-title { font-size: 20px; font-weight: 700; margin: 0; color: #ffffff; line-height: 1.3; }
+    .content { padding: 24px; }
+    .badge { display: inline-block; padding: 5px 12px; border-radius: 9999px; font-size: 12px; font-weight: 700; background: #d1fae5; color: #047857; }
+    .section-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin: 16px 0; }
+    .label { font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; margin-bottom: 2px; }
+    .value { font-size: 14px; font-weight: 600; color: #0f172a; }
+    .desc-box { background: #ffffff; border-left: 4px solid #059669; padding: 14px 16px; margin-top: 12px; border-radius: 4px; font-size: 14px; line-height: 1.6; color: #334155; }
+    .btn { display: inline-block; background: #059669; color: #ffffff; padding: 12px 24px; border-radius: 10px; text-decoration: none; font-weight: 600; font-size: 14px; margin-top: 16px; }
+    .footer { background: #f1f5f9; padding: 16px 24px; font-size: 12px; color: #64748b; border-top: 1px solid #e2e8f0; text-align: center; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="header-tag">Elimisha Watoto Foundation • IT Resolution Notice</div>
+      <h1 class="header-title">${announcement.title} - Service Restored</h1>
+    </div>
+    <div class="content">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+        <span class="badge">✔ All Services Fully Operational</span>
+        <span style="font-size: 12px; color: #64748b; font-weight: 500;">Resolved: ${formattedDate}</span>
+      </div>
+
+      <p style="margin-top: 0; font-size: 14px; color: #475569;">
+        This is an official follow-up confirmation that the previously reported service alert has been remediated and the affected systems have returned to normal service.
+      </p>
+
+      <div class="section-box">
+        <table style="width: 100%; border-collapse: collapse;">
+          <tr>
+            <td style="padding: 6px 0; width: 50%;">
+              <div class="label">Affected System</div>
+              <div class="value">${announcement.affectedSystem || 'General Organization Portals'}</div>
+            </td>
+            <td style="padding: 6px 0; width: 50%;">
+              <div class="label">Status</div>
+              <div class="value" style="color: #059669; font-weight: bold;">Resolved & Operational</div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 6px 0;">
+              <div class="label">Verified By</div>
+              <div class="value">${resolvedBy || announcement.authorName || 'IT Administration'}</div>
+            </td>
+            <td style="padding: 6px 0;">
+              <div class="label">Target Audience</div>
+              <div class="value">${validRecipients.length} Selected Staff Mailboxes</div>
+            </td>
+          </tr>
+        </table>
+
+        <div style="margin-top: 14px;">
+          <div class="label">Resolution Summary</div>
+          <div class="desc-box">${resolutionText.replace(/\n/g, '<br/>')}</div>
+        </div>
+
+        ${announcement.message ? `
+        <div style="margin-top: 14px; padding-top: 12px; border-top: 1px solid #e2e8f0;">
+          <div class="label">Original Incident Alert</div>
+          <div style="font-size: 12px; color: #64748b; margin-top: 4px;">${announcement.message.replace(/\n/g, '<br/>')}</div>
+        </div>
+        ` : ''}
+      </div>
+
+      <div style="text-align: center; margin-top: 20px;">
+        <a href="${itWorkspaceUrl}" class="btn" style="color: #ffffff;">Access Employee Helpdesk Portal</a>
+      </div>
+    </div>
+    <div class="footer">
+      Sent to staff members who received the initial alert for this incident.<br/>
+      Elimisha Watoto Foundation • IT Operations Helpdesk (<strong>it@elimishawatoto.org</strong>)
+    </div>
+  </div>
+</body>
+</html>`;
+
+    const textFallback = `[RESOLVED] ${announcement.title}
+Status: Resolved & Fully Operational
+Affected System: ${announcement.affectedSystem || 'General Systems'}
+Resolved By: ${resolvedBy || announcement.authorName || 'IT Administration'}
+
+Resolution Details:
+${resolutionText}
+
+Original Notice:
+${announcement.message}
+
+Employee Portal: ${itWorkspaceUrl}
+Elimisha Watoto Foundation IT Support Desk`;
+
+    let sendStatus: 'sent' | 'simulated' = 'simulated';
+    let messageId: string | undefined = undefined;
+    let smtpError: string | undefined = undefined;
+    let portUsed: number | undefined = undefined;
+
+    const smtpConfig = getSmtpConfig();
+
+    if (smtpConfig.configured) {
+      try {
+        const mailOptions: any = {
+          subject,
+          text: textFallback,
+          html: htmlContent,
+        };
+
+        if (validRecipients.length === 1) {
+          mailOptions.to = validRecipients[0];
+        } else {
+          mailOptions.to = `Elimisha Watoto Staff <${smtpConfig.user || 'it@elimishawatoto.org'}>`;
+          mailOptions.bcc = validRecipients;
+        }
+
+        const dispatchResult = await dispatchMailWithFallback(mailOptions, smtpConfig);
+
+        sendStatus = 'sent';
+        messageId = dispatchResult.messageId;
+        portUsed = dispatchResult.portUsed;
+        console.log(`[RESOLUTION EMAIL SENT] Alert "${announcement.title}" resolution sent to ${validRecipients.length} staff emails via Port ${portUsed} | ID: ${messageId}`);
+      } catch (err: any) {
+        smtpError = err?.message || String(err);
+        console.error(`[SMTP ERROR] Failed to dispatch resolution email:`, smtpError);
+        sendStatus = 'simulated';
+      }
+    } else {
+      console.log(`[SMTP SIMULATED] Alert "${announcement.title}" resolution simulated to ${validRecipients.length} recipients`);
+    }
+
+    const logEntry = {
+      id: `notif-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      ticketNumber: `RESOLVED-${(announcement.affectedSystem || 'IT').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) || 'BROADCAST'}`,
+      recipients: validRecipients,
+      subject,
+      timestamp: new Date().toISOString(),
+      status: sendStatus,
+      error: smtpError,
+      preview: `[RESOLVED] "${announcement.title}" resolution notice sent to ${validRecipients.length} staff emails${portUsed ? ` via Port ${portUsed}` : ''}`,
+    };
+    emailNotificationLogs.unshift(logEntry);
+    if (emailNotificationLogs.length > 50) emailNotificationLogs.pop();
+
+    return res.json({
+      success: sendStatus === 'sent',
+      message: sendStatus === 'sent'
+        ? `Resolution notification successfully sent to ${validRecipients.length} staff members.`
+        : `Resolution notification logged (Delivery could not complete live: ${smtpError || 'Simulated mode'}).`,
+      warning: sendStatus !== 'sent' ? (smtpError || 'Email could not be delivered live.') : undefined,
+      recipients: validRecipients,
+      recipientCount: validRecipients.length,
+      status: sendStatus,
+      port: portUsed,
+      messageId,
+      error: smtpError,
+      dispatchedAt: logEntry.timestamp,
+    });
+  } catch (err: any) {
+    console.error("Resolution email error:", err);
+    return res.status(500).json({ error: err.message || "Failed to dispatch resolution email" });
+  }
+});
+
 // Get recent notification dispatch log and SMTP status
 apiRouter.get("/notifications/recent", (_req, res) => {
   const smtpConfig = getSmtpConfig();

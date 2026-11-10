@@ -180,6 +180,10 @@ export interface PortalAnnouncement {
   updatedAt: string;
   expectedResolution?: string;
   authorName?: string;
+  targetRecipients?: string[];
+  broadcastMode?: 'all' | 'selected';
+  resolutionNotes?: string;
+  resolvedAt?: string;
 }
 
 export interface DownloadDocument {
